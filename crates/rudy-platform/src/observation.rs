@@ -129,6 +129,9 @@ pub struct DriveObservation {
     pub mount: DataPartitionMount,
     pub capacity: CapacityObservation,
     pub images: ImageScan,
+    /// Staging files on partition 1 that never became images. See
+    /// [`crate::image_copy::unfinished_copies`].
+    pub unfinished_copies: Vec<String>,
 }
 
 impl DriveObservation {
@@ -141,6 +144,7 @@ impl DriveObservation {
             mount: DataPartitionMount::NotAttempted,
             capacity: CapacityObservation::NotAttempted,
             images: ImageScan::NotAttempted,
+            unfinished_copies: Vec::new(),
         }
     }
 }
@@ -176,6 +180,7 @@ pub fn observe_drive(dev_node: &Path) -> DriveObservation {
                 mount: DataPartitionMount::NotAttempted,
                 capacity: CapacityObservation::NotAttempted,
                 images: ImageScan::NotAttempted,
+                unfinished_copies: Vec::new(),
             }
         }
         Err(error) => return DriveObservation::nothing_learned(dev_node, error.to_string()),
@@ -199,9 +204,17 @@ pub fn observe_drive(dev_node: &Path) -> DriveObservation {
         DataPartitionMount::NotAttempted
     };
 
-    let (capacity, images) = match mount.path() {
-        Some(path) => (observe_capacity(path), LinuxPlatform::scan_images(path)),
-        None => (CapacityObservation::NotAttempted, ImageScan::NotAttempted),
+    let (capacity, images, unfinished_copies) = match mount.path() {
+        Some(path) => (
+            observe_capacity(path),
+            LinuxPlatform::scan_images(path),
+            crate::image_copy::unfinished_copies(path),
+        ),
+        None => (
+            CapacityObservation::NotAttempted,
+            ImageScan::NotAttempted,
+            Vec::new(),
+        ),
     };
 
     DriveObservation {
@@ -210,6 +223,7 @@ pub fn observe_drive(dev_node: &Path) -> DriveObservation {
         mount,
         capacity,
         images,
+        unfinished_copies,
     }
 }
 

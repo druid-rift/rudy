@@ -189,6 +189,7 @@ fn show_observation(
         observation: &observation,
         showing_first_run: app.get_first_run_prompt(),
         list_is_for_this_drive,
+        copy_running: session.is_busy(),
     });
 
     // One flag for the whole post-install surface: the ISO manager needs a
@@ -992,6 +993,7 @@ mod observer_tests {
                     mount: DataPartitionMount::NotAttempted,
                     capacity: CapacityObservation::NotAttempted,
                     images: ImageScan::NotAttempted,
+                    unfinished_copies: Vec::new(),
                 }
             },
             |outcome| delivered.push(outcome),

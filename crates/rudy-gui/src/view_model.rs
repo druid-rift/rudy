@@ -441,6 +441,9 @@ pub struct ObservedDrive<'a> {
     /// Whether the image list currently on screen was built from this same
     /// drive. Decides `Keep` versus `Clear` when a scan learns nothing.
     pub list_is_for_this_drive: bool,
+    /// Whether a copy is writing to the drive right now, so its staging file
+    /// is not reported as a copy that did not finish.
+    pub copy_running: bool,
 }
 
 pub fn drive_panel(observed: ObservedDrive<'_>) -> DrivePanel {
@@ -449,6 +452,7 @@ pub fn drive_panel(observed: ObservedDrive<'_>) -> DrivePanel {
         mount,
         capacity,
         images,
+        unfinished_copies,
         ..
     } = observed.observation;
 
@@ -512,13 +516,25 @@ pub fn drive_panel(observed: ObservedDrive<'_>) -> DrivePanel {
         }
     };
 
-    let scan_warning = match images {
+    let short_list = match images {
         ImageScan::Partial { unreadable, .. } => Some(format!(
             "Some folders on this drive could not be read, so this list may be \
              incomplete: {}",
             unreadable.join(", ")
         )),
         _ => None,
+    };
+    // A running copy's own staging file is not unfinished, only unfinished yet.
+    let stranded = (!observed.copy_running && !unfinished_copies.is_empty()).then(|| {
+        format!(
+            "A copy did not finish and will not appear in the boot menu: {}. \
+             Delete it in the file manager and copy the image again.",
+            unfinished_copies.join(", ")
+        )
+    });
+    let scan_warning = match (short_list, stranded) {
+        (Some(a), Some(b)) => Some(format!("{a} {b}")),
+        (a, b) => a.or(b),
     };
 
     let isos = match images.found() {
@@ -1122,6 +1138,7 @@ mod tests {
                 used_bytes: 4_000_000_000,
             },
             images: ImageScan::Complete(Vec::new()),
+            unfinished_copies: Vec::new(),
         }
     }
 
@@ -1130,6 +1147,7 @@ mod tests {
             observation,
             showing_first_run: false,
             list_is_for_this_drive: true,
+            copy_running: false,
         })
     }
 
@@ -1184,6 +1202,7 @@ mod tests {
             observation: &observed(DriveLayout::NotKnownToUdisks2),
             showing_first_run: true,
             list_is_for_this_drive: true,
+            copy_running: false,
         });
         assert!(matches!(
             panel,
@@ -1272,6 +1291,7 @@ mod tests {
             observation: &observation,
             showing_first_run: false,
             list_is_for_this_drive: false,
+            copy_running: false,
         });
         match panel {
             DrivePanel::Mounted { isos, .. } => assert_eq!(isos, IsoListUpdate::Clear),
@@ -1289,6 +1309,25 @@ mod tests {
             }
             other => panic!("expected Mounted, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_copy_that_never_finished_is_named_unless_it_is_still_running() {
+        let mut observation = observed(DriveLayout::Matches);
+        observation.unfinished_copies = vec!["ubuntu.iso.EDasDR.rudy-partial".into()];
+        let warning = |copy_running| match drive_panel(ObservedDrive {
+            observation: &observation,
+            showing_first_run: false,
+            list_is_for_this_drive: true,
+            copy_running,
+        }) {
+            DrivePanel::Mounted { scan_warning, .. } => scan_warning,
+            other => panic!("expected Mounted, got {other:?}"),
+        };
+        let shown = warning(false).expect("a stranded copy must be said");
+        assert!(shown.contains("ubuntu.iso.EDasDR.rudy-partial"), "{shown}");
+        assert!(shown.contains("boot menu"), "{shown}");
+        assert_eq!(warning(true), None, "a running copy is not a stranded one");
     }
 
     #[test]
@@ -1383,6 +1422,7 @@ mod tests {
             observation: &observed(DriveLayout::Matches),
             showing_first_run: true,
             list_is_for_this_drive: true,
+            copy_running: false,
         }) {
             DrivePanel::Mounted {
                 first_run_prompt, ..
@@ -1397,6 +1437,7 @@ mod tests {
             observation: &observed(DriveLayout::Differs),
             showing_first_run: true,
             list_is_for_this_drive: true,
+            copy_running: false,
         }) {
             DrivePanel::Unprepared { first_run_prompt } => assert!(!first_run_prompt),
             other => panic!("expected Unprepared, got {other:?}"),

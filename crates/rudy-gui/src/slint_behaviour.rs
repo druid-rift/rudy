@@ -689,6 +689,7 @@ fn mounted_holding(drive: &StorageDevice, image: &str) -> DriveObservation {
             format!("/run/media/user/RUDY/{image}"),
             1024,
         )]),
+        unfinished_copies: Vec::new(),
     }
 }
 
@@ -868,6 +869,7 @@ fn an_observation_that_learned_nothing_keeps_the_first_run_prompt() {
             mount: DataPartitionMount::NotAttempted,
             capacity: CapacityObservation::NotAttempted,
             images: ImageScan::NotAttempted,
+            unfinished_copies: Vec::new(),
         },
     );
     assert!(app.get_first_run_prompt());

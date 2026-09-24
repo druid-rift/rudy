@@ -247,6 +247,26 @@ impl PendingImage for StagedFile {
     }
 }
 
+/// The staging files in `directory`: copies that never reached their rename.
+///
+/// A copy the process did not survive — a crash, a pulled drive, a killed
+/// window — leaves its staging file behind. The boot menu rightly never lists
+/// it, which is exactly why it has to be said somewhere: otherwise a whole
+/// image's worth of space is gone and the image the user copied is missing,
+/// with no word about either. An unreadable directory is no staging files,
+/// because the image scan already reports it.
+pub fn unfinished_copies(directory: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(directory)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| name.ends_with(STAGING_SUFFIX))
+        .collect();
+    names.sort();
+    names
+}
+
 /// Creates a uniquely named staging file in `directory`.
 ///
 /// Unique and create-new, because the fixed `<name>.rudy-partial` this
@@ -890,6 +910,27 @@ mod tests {
             worst < SYNC_INTERVAL_BYTES,
             "progress ran {worst} bytes ahead of the drive"
         );
+    }
+
+    #[test]
+    fn a_copy_the_process_did_not_survive_is_found_and_a_finished_one_is_not() {
+        let source_dir = scratch();
+        let dest = scratch();
+        let source = write_source(source_dir.path(), "arch.iso", b"payload");
+        copy_image_into_directory(&source, dest.path(), &mut |_, _| {}).expect("copy succeeds");
+        assert!(unfinished_copies(dest.path()).is_empty());
+
+        // What a killed process leaves: a staging file that was never renamed.
+        let stranded = stage_in(dest.path(), "ubuntu.iso").expect("stage");
+        let name = stranded
+            .staging_path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let _ = stranded.0.keep();
+        assert_eq!(unfinished_copies(dest.path()), vec![name]);
+        assert!(unfinished_copies(&dest.path().join("absent")).is_empty());
     }
 
     // ---- preflight, through the production sequence with the observation injected ----
