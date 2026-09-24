@@ -1,0 +1,30 @@
+/target
+dist/
+*.iso
+*.img
+*.raw
+*.qcow2
+*.tar.gz
+/tools
+
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Boot payload bundles are built artefacts, not sources (scripts/build-boot-payload.sh).
+/assets/boot-assets/
+
+# `CLAUDE.md` is tracked: the issue tracker cites it as the authority for
+# constraints nothing else states, so a clone without it has dangling
+# references. `AGENTS.md` stays local — it is a per-bench alias, not content.
+/AGENTS.md
+
+# The coverage backlog is the maintainer's working notes, not repository
+# content. The issue tracker and the agent conventions are tracked instead:
+# agents work one to a worktree, and a gitignored ticket is invisible to every
+# checkout but the one that wrote it.
+/docs/testing-backlog.md
+
+# Agent tooling scratch space (worktrees, session state).
+/.claude/

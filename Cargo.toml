@@ -1,0 +1,44 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/rudy-core",
+    "crates/rudy-platform",
+    "crates/rudy-cli",
+    "crates/rudy-gui",
+    "crates/rudy-boot",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+# Measured, not assumed: Slint 1.17.1 declares 1.92, rustc 1.91.0 refuses the
+# locked dependency set, and 1.92.0 builds and passes the tests (AR-19).
+rust-version = "1.92"
+authors = ["Rudy Contributors"]
+license = "GPL-3.0-or-later"
+repository = "https://rudy.dev"
+
+[workspace.dependencies]
+rudy-core = { path = "crates/rudy-core" }
+rudy-platform = { path = "crates/rudy-platform" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+zstd = "0.13"
+sha2 = "0.10"
+fatfs = "0.3"
+gpt = "3.1"
+mbr-nostd = "0.1"
+clap = { version = "4.5", features = ["derive"] }
+indicatif = "0.17"
+slint = "1.7"
+uuid = { version = "1.10", features = ["v4", "serde"] }
+toml = "0.8"
+tempfile = "3.10"
+rfd = "0.15"
+# udisks2 over the system D-Bus (ADR 0003). `blocking` only: the privileged
+# path is synchronous and pulling in an async runtime for it would be a bigger
+# change than the one being made.
+zbus = "5.19"

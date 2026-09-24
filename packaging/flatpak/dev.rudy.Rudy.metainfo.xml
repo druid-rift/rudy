@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AppStream metadata for the Flatpak bundle (flatpak 04).
+
+  Written to Flathub's schema even though flatpak 03 chose a locally-built
+  bundle, so that publishing later is a submission rather than a rewrite. Two
+  things a Flathub submission would still need and this does not have:
+  screenshots (none exist that are not test evidence) and a reachable homepage
+  at https://rudy.dev.
+-->
+<component type="desktop-application">
+  <id>dev.rudy.Rudy</id>
+
+  <name>Rudy</name>
+  <summary>Create multi-boot USB drives</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <description>
+    <p>
+      Rudy turns a USB drive into a multi-boot installer. Copy ISO files onto it
+      with your file manager and it offers them at boot — no reformatting, and
+      no re-writing the drive to add another image.
+    </p>
+    <p>
+      The drive is written through udisks2, so Rudy never runs as root: your
+      desktop asks you to authorise the one privileged step and nothing else.
+      System disks are refused outright, and a target whose safety cannot be
+      established is refused rather than assumed safe.
+    </p>
+    <p>UEFI only. Secure Boot is not supported.</p>
+  </description>
+
+  <launchable type="desktop-id">dev.rudy.Rudy.desktop</launchable>
+
+  <!-- The domain the app id is derived from. Confirmed as the project's
+       2026-09-02; Flathub verifies control of it with a token served from
+       /.well-known/org.flathub.VerifiedApps.txt, which a submission would
+       need and a local bundle does not. -->
+  <url type="homepage">https://rudy.dev</url>
+
+  <developer id="dev.rudy">
+    <name>The Rudy project</name>
+  </developer>
+
+  <categories>
+    <category>System</category>
+    <category>Utility</category>
+    <category>Filesystem</category>
+  </categories>
+
+  <provides>
+    <binary>rudy</binary>
+    <binary>rudy-gui</binary>
+  </provides>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="0.1.0" date="2026-09-02">
+      <description>
+        <p>First packaged release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

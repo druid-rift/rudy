@@ -1,0 +1,210 @@
+# Rudy as a Flatpak — ADR 0003, flatpak ticket 04.
+#
+# The artefact is a locally-built bundle (`flatpak build-bundle`), written to
+# Flathub's schema so that publishing later is a submission rather than a
+# rewrite — flatpak 03. That is why every source is declared with a hash and
+# nothing is fetched during the build: Flathub gives a build no network access
+# and refuses pre-built binaries, and a manifest that relied on either would
+# have to be undone to submit.
+#
+# Every `finish-args` line below carries the reason it is there. A permission
+# with no justification beside it is one nobody can review, and 03 committed us
+# to pre-applying that review to ourselves.
+app-id: dev.rudy.Rudy
+
+# 25.08, not 26.08. The Platform and Sdk are published for 26.08 but
+# `org.freedesktop.Sdk.Extension.rust-stable` stops at 25.08 (checked against
+# flathub 2026-09-02), and the app cannot be built without it. Raise all four
+# together or not at all.
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+
+command: rudy-gui
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    # Points cargo at the vendored crates `cargo-sources.json` unpacks. Must
+    # match VENDOR in scripts/flatpak-cargo-sources.py.
+    CARGO_HOME: /run/build/rudy/cargo
+
+finish-args:
+  # The privilege model, and the only reason this app needs anything at all.
+  # Rudy opens the target disk through udisks2's `Block.OpenDevice` over the
+  # system bus, where udisks2 runs its own polkit check against the calling
+  # user (ADR 0003).
+  #
+  # `--system-talk-name` rather than `--socket=system-bus`: the latter hands
+  # over the whole system bus unfiltered, and this app talks to exactly one
+  # service. The narrow form goes through xdg-dbus-proxy, which **does forward
+  # Unix file descriptors** (`flatpak-proxy.c`, `side_get_n_unix_fds` and the
+  # `unix_fds` header field) — so the descriptor `OpenDevice` returns still
+  # arrives. That was the one thing that could have forced the broad permission.
+  - --system-talk-name=org.freedesktop.UDisks2
+
+  # `rudy-gui` links no display library at all — Wayland, X11, xkbcommon, EGL
+  # and GL are dlopened at runtime (measured 2026-09-02: they appear as string
+  # literals in the binary and nowhere in `ldd`). So the runtime has to provide
+  # them and these two sockets are what make the dlopen succeed.
+  - --socket=wayland
+  - --socket=fallback-x11
+  # Required alongside fallback-x11: a sandbox with no shared memory cannot
+  # bring up an X11 surface.
+  - --share=ipc
+  # The GPU, and nothing else. Without it EGL cannot open a DRI device —
+  # measured: "failed to get driver name for fd -1", then "ZINK: failed to
+  # choose pdev" and a fall back to software. This is `dri` specifically, not
+  # `all`: it exposes the render nodes and no block device.
+  - --device=dri
+
+  # The desktop ISO manager copies images onto the drive Rudy just wrote, and
+  # the drive is mounted by udisks2 beneath /run/media. Without this the
+  # first-run ISO flow has nothing to show — which is flatpak 05, and is why
+  # that ticket is a convenience defect rather than a blocker: cancelling the
+  # prompt still leaves a fully usable drive.
+  - --filesystem=/run/media
+  # Where a user's ISOs actually live. Read-only: Rudy copies *from* here.
+  - --filesystem=xdg-download:ro
+
+# Deliberately NOT granted, so the next person does not have to work out why:
+#
+#   --device=all        Broad, and its need is unproven. `rudy-gui` links
+#                       libudev at build time (a hard dependency, not a
+#                       dlopen), but whether udev enumeration works through
+#                       the sandbox's /run/udev is flatpak 06's open question.
+#                       Adding it speculatively would grant every device node
+#                       to avoid measuring one thing.
+#   --socket=system-bus Superseded by the narrow talk-name above.
+#   --filesystem=host   Never. This app writes partition tables.
+
+modules:
+  # Two build-only tools the payload script hard-requires and
+  # `org.freedesktop.Sdk` does not ship. Measured 2026-09-02 by running the
+  # `require` list inside the SDK: `zstd` is present; `mkfs.vfat`, `mmd` and
+  # `mcopy` are not. (`bison`, `flex`, `gcc`, `make` and `curl` were on that
+  # list too and were GRUB's; RB-08 removed them from the script.)
+  #
+  # `cleanup: ['*']` because nothing here belongs in the finished app — they
+  # exist to build the RUDYEFI image and are stripped from the result.
+  - name: dosfstools
+    # Provides `mkfs.vfat`, which lays down partition 2's FAT16 filesystem.
+    cleanup: ['*']
+    config-opts:
+      # `mkfs.vfat` is a compat symlink for `mkfs.fat`, and the script asks for
+      # it by that name.
+      - --enable-compat-symlinks
+      # Into /app/bin, not the default /app/sbin, which is not on the build
+      # PATH — measured: the payload module failed with "required tool
+      # 'mkfs.vfat' was not found" while the binary sat in /app/sbin. Cheaper
+      # than giving the module its own append-path, and nothing here ships
+      # anyway (see cleanup above).
+      - --sbindir=/app/bin
+    sources:
+      - type: archive
+        url: https://github.com/dosfstools/dosfstools/releases/download/v4.2/dosfstools-4.2.tar.gz
+        sha256: 64926eebf90092dca21b14259a5301b7b98e7b1943e8a201c7d726084809b527
+
+  - name: mtools
+    # Provides `mmd` and `mcopy`, which populate that filesystem without
+    # mounting it — mounting would need privileges a Flatpak build does not
+    # have, which is why the script uses them in the first place.
+    cleanup: ['*']
+    sources:
+      - type: archive
+        url: https://ftp.gnu.org/gnu/mtools/mtools-4.0.49.tar.gz
+        sha256: 10cd1111da87bf2400a380c1639a6cba8bfb937a24f9c51f5f88d393ae5f6f76
+
+  # The bootloader: `crates/rudy-boot`, built for x86_64-unknown-uefi.
+  #
+  # Until RB-08 this module fetched GRUB2 and GNU Unifont by pinned hash and
+  # compiled a C bootloader. Both are gone, and so is the `cflags: ''` override
+  # that existed only because the SDK's hardening flags broke GRUB's
+  # freestanding modules — nothing here is freestanding C any more.
+  #
+  # One pinned source remains, and it is not an upstream Rudy depends on: the
+  # Rust standard library for the payload's target.
+  # `org.freedesktop.Sdk.Extension.rust-stable` ships `rust-std` for
+  # `i686-unknown-linux-gnu` and `x86_64-unknown-linux-gnu` and nothing else
+  # (measured 2026-09-19 by listing `lib/rustlib` inside the extension), and
+  # there is no rustup in the SDK to add one. `-Z build-std` is not an option:
+  # it needs nightly, and an unpinned nightly in the shipping bootloader's build
+  # is worse than a declared source.
+  #
+  # The version must match the extension's rustc exactly — 1.98.1 — because a
+  # standard library and the compiler that consumes it are one release. When the
+  # extension moves, this pin moves with it or the build stops.
+  - name: boot-payload
+    buildsystem: simple
+    build-options:
+      env:
+        # This module's own vendor directory. `cargo-sources.json` writes a
+        # relative `directory = "cargo/vendor"`, so CARGO_HOME has to be under
+        # the build root cargo is run from — the manifest-level value points at
+        # the `rudy` module's.
+        CARGO_HOME: /run/build/boot-payload/cargo
+    sources:
+      - type: archive
+        url: https://static.rust-lang.org/dist/rust-std-1.98.1-x86_64-unknown-uefi.tar.xz
+        sha256: ef1b10ec238f44ef1066d1f85f7293cf5a9d037d50bf2f3abbc346185d3d60d9
+        dest: rust-std-uefi
+        strip-components: 1
+      - type: dir
+        path: ../..
+        # The payload is Rust now, so `crates/`, `Cargo.toml` and `Cargo.lock`
+        # are what this module reads — they used to be skipped, because a GRUB
+        # build had no business seeing the Rust tree.
+        #
+        # It still does **not** buy a cache hit. Measured 2026-09-02:
+        # flatpak-builder rebuilds a `type: dir` module every time, even with
+        # nothing changed. That cost several minutes when it was a C bootloader;
+        # the Rust payload builds in about five seconds, so the thing that made
+        # it worth fixing has gone away on its own.
+        skip:
+          - target
+          - .git
+          - .scratch
+          - .claude
+          - docs
+          - packaging
+          - tools
+          - iso(testing)
+      - cargo-sources.json
+    build-commands:
+      # A sysroot of symlinks: the extension's own rustlib for the host, and the
+      # declared tarball's `x86_64-unknown-uefi` beside it. Cheaper than copying
+      # 1.8 GB of extension, and the builder takes it through
+      # RUDY_PAYLOAD_SYSROOT.
+      - mkdir -p payload-sysroot/lib/rustlib
+      - ln -s /usr/lib/sdk/rust-stable/lib/rustlib/x86_64-unknown-linux-gnu payload-sysroot/lib/rustlib/
+      - cp -r rust-std-uefi/rust-std-x86_64-unknown-uefi/lib/rustlib/x86_64-unknown-uefi payload-sysroot/lib/rustlib/
+      # No `--out`, deliberately. The bundle version is the script's to own —
+      # it already agrees with `rudy_platform::ASSET_VERSION`, and flatpak 09
+      # removed the last place that restated it as a literal. Naming the
+      # versioned path here would put it straight back.
+      - RUDY_PAYLOAD_SYSROOT="$PWD/payload-sysroot" ./scripts/build-boot-payload.sh --work payload-work
+      - install -d /app/share/rudy/boot-assets
+      - cp -r assets/boot-assets/. /app/share/rudy/boot-assets/
+
+  - name: rudy
+    buildsystem: simple
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - target
+          - .git
+          - .scratch
+          - .claude
+      - cargo-sources.json
+    build-commands:
+      # `--offline` makes a missing crate a hard error here rather than a
+      # network attempt that fails with a less obvious message.
+      - cargo --offline build --release --bin rudy --bin rudy-gui
+      - install -Dm755 target/release/rudy /app/bin/rudy
+      - install -Dm755 target/release/rudy-gui /app/bin/rudy-gui
+      - install -Dm644 packaging/flatpak/dev.rudy.Rudy.desktop /app/share/applications/dev.rudy.Rudy.desktop
+      - install -Dm644 packaging/flatpak/dev.rudy.Rudy.metainfo.xml /app/share/metainfo/dev.rudy.Rudy.metainfo.xml
+      - install -Dm644 assets/icons/rudy.svg /app/share/icons/hicolor/scalable/apps/dev.rudy.Rudy.svg

@@ -1,0 +1,23 @@
+[package]
+name = "rudy-platform"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+rudy-core = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+# Promoted from a dev-dependency by copy ticket 02: `image_copy` stages through
+# `NamedTempFile` for its unique, create-new staging file. The feature spec
+# allows exactly this promotion rather than a bespoke staging lifecycle.
+tempfile = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { version = "0.29", features = ["ioctl", "fs", "mount", "sched"] }
+udev = "0.9"
+zbus = { workspace = true }

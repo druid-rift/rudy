@@ -1,0 +1,154 @@
+name: Linux build and test
+
+# Everything here is non-destructive and needs no block device. The image and
+# boot tiers are absent on purpose: they need KVM, multi-gigabyte staged ISOs
+# and a GRUB2 build, and a `FirmwareEnumeration` flake rate measured at roughly
+# 50% per attempt would train everyone to ignore red. They run on the bench —
+# `make vm-matrix` — and the results land in `docs/testing-guide.md` §4.
+#
+# The hardware tier is never run here, by any workflow, under any condition.
+# See docs/testing-strategy.md §6.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  # The advisory scan is the only job on this schedule; see its `if:` below.
+  schedule:
+    - cron: '0 6 * * 1'
+
+jobs:
+  linux:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The changed-file format check compares against the merge base, so
+          # it needs more than the default single commit.
+          fetch-depth: 0
+      - name: Check for identifying data
+        # This repository documents destructive disk work done on one bench, so
+        # a real path, device node or account name pasted into a document or a
+        # test fixture is a standing temptation. None of it belongs here: it
+        # identifies the maintainer and it goes stale the moment the bench does.
+        # The bench's own names are not in the tree (a tracked list would be the
+        # disclosure); this secret carries them, `|`-separated. Unset, the check
+        # still runs on the generic shapes.
+        env:
+          RUDY_IDENTIFYING_TOKENS: ${{ secrets.RUDY_IDENTIFYING_TOKENS }}
+        run: ./scripts/check-no-identifying-data.sh
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          # The boot payload is a UEFI application, so the target it is built
+          # for has to be installed before anything can build or lint it.
+          targets: x86_64-unknown-uefi
+      - uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          # `grub-common`, `bison`, `flex`, `gettext` and `libfreetype-dev` were
+          # GRUB's build chain and went with it (RB-08). `mtools`, `dosfstools`
+          # and `zstd` make and compress the FAT16 image, which has not changed.
+          sudo apt-get install -y libudev-dev libxkbcommon-dev libfontconfig-dev \
+            pkg-config python3 mtools dosfstools zstd
+
+      - name: Lint the boot payload for its own target
+        # `cargo clippy --workspace` below never looks at the half of the payload
+        # that talks to firmware: it is behind `#[cfg(target_os = "uefi")]`. This
+        # is what does, and it replaces the `grub-script-check` step that checked
+        # the menu when the menu was GRUB script.
+        #
+        # `--all-targets` is deliberately absent: the UEFI target ships a std, so
+        # a test harness built for it defines `#[panic_handler]` too and the
+        # payload's own is rejected as a duplicate lang item.
+        run: cargo clippy -p rudy-boot --target x86_64-unknown-uefi -- -D warnings
+
+      - name: Cache the boot payload
+        id: boot-payload
+        uses: actions/cache@v6
+        with:
+          path: assets/boot-assets
+          # Every repository file the payload is built from. There is no pinned
+          # upstream left to name (RB-08): the payload is `crates/rudy-boot`,
+          # `Cargo.lock` stands in for its dependency tree, and the builder
+          # itself carries the layout and the bundle version.
+          #
+          # `scripts/tests/test_payload_cache_identity.py` derives this list from
+          # the builder and checks it in both directions, so a file added there
+          # and not here fails a test rather than restoring a stale payload.
+          #
+          # v3: v2's namespace hashed GRUB's configuration files, which no longer
+          # exist, so every v2 entry is a payload this workflow can no longer
+          # produce.
+          key: boot-payload-v3-${{ hashFiles('scripts/build-boot-payload.sh', 'Cargo.lock', 'crates/rudy-boot/src/**', 'crates/rudy-core/src/iso_discovery.rs') }}
+
+      - name: Verify or build boot payload
+        # Builds `crates/rudy-boot` on cold cache or if the restored bundle fails
+        # verification; skipped entirely when a valid matching bundle is restored
+        # from cache. Needed by the negative tier.
+        run: |
+          if [ "${{ steps.boot-payload.outputs.cache-hit }}" = "true" ]; then
+            echo "[*] Verifying cached boot payload..."
+            if python3 -m scripts.verify_boot_payload --bundle assets/boot-assets/2.0.0 --require-manifest; then
+              echo "[*] Cached boot payload verified successfully."
+              exit 0
+            else
+              echo "[-] Cached boot payload failed verification. Rebuilding..."
+            fi
+          fi
+          ./scripts/build-boot-payload.sh
+          python3 -m scripts.verify_boot_payload --bundle assets/boot-assets/2.0.0 --require-manifest
+
+      - name: Format (files this change touched)
+        # Not `cargo fmt --all`: ~71 pre-existing hunks across the tree would
+        # make this red on every run and therefore ignored. See the header of
+        # the script.
+        run: ./scripts/check-fmt-changed.sh --base origin/${{ github.base_ref || 'master' }}
+
+      - name: Test workspace
+        run: cargo test --workspace --all-targets
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Python automation tests
+        run: python -m unittest discover -s scripts/tests -t .
+
+      - name: Build release binaries
+        run: cargo build --release --workspace
+
+      - name: Negative tier
+        # Needs the release binaries above: these cases run the shipped
+        # executables against real broken filesystem state. No device, no QEMU.
+        run: python -m scripts.negative_cases --json negative-results.json
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results
+          path: |
+            negative-results.json
+            target/test-reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  advisories:
+    # Separate job: an advisory published against a dependency is not a reason
+    # to fail a code review, and it arrives without anyone pushing anything.
+    # So it runs on the weekly cron above, not on every push: compiling
+    # cargo-audit from source cost 6m6s of billed time per push, and this
+    # repository is private, where Actions minutes are metered.
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - name: Dependency advisory scan
+        uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

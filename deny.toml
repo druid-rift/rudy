@@ -1,0 +1,43 @@
+# `cargo deny check` policy (AR-24). Without this file cargo-deny's default
+# licence policy denies everything, and a wall of red that means nothing is why
+# nobody ran it.
+
+[advisories]
+# Accepted, not missed — measured 2026-09-14. Every one is `unmaintained`, not a
+# vulnerability, and none is a dependency this project chose: three are Slint's
+# font and macro stack and one is indicatif's. Each is ignored by ID, never by
+# kind, so a new advisory against any crate still fails the check.
+#
+# Not listed: RUSTSEC-2025-0141 (bincode, unmaintained). `cargo audit` reports
+# it from Cargo.lock, where it is an optional dependency of the Slint compiler's
+# typed-index-collections; it is not in the resolved graph, so cargo-deny does
+# not report it and an ignore here would itself warn.
+ignore = [
+    { id = "RUSTSEC-2026-0206", reason = "rustybuzz: Slint's text shaping; only Slint can replace it" },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser: Slint's font parsing; only Slint can replace it" },
+    { id = "RUSTSEC-2024-0436", reason = "paste: build-time proc-macro inside the Slint compiler" },
+    { id = "RUSTSEC-2025-0119", reason = "number_prefix: via indicatif 0.17 in the CLI's progress bar" },
+]
+
+[licenses]
+# What the tree genuinely carries, not a template. The workspace is
+# GPL-3.0-or-later; Slint is taken under GPL-3.0-only, which that satisfies.
+allow = [
+    "GPL-3.0-or-later",
+    "GPL-3.0-only",
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "ISC",
+    "NCSA",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+
+[bans]
+# Duplicate versions come from Slint's and zbus's trees; nothing here can
+# unify them.
+multiple-versions = "allow"

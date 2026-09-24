@@ -1,0 +1,22 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Rudy
+GenericName=Bootable USB Creator
+GenericName[de]=Ersteller für bootfähige USB-Laufwerke
+GenericName[es]=Creador de USB de arranque
+GenericName[fr]=Créateur de clé USB amorçable
+GenericName[zh_CN]=可启动 USB 制作工具
+Comment=Create multi-boot USB drives for ISO, WIM, IMG, and VHD files without reformatting
+Comment[de]=Multi-Boot-USB-Laufwerke für ISO, WIM, IMG und VHD ohne Neuformatierung erstellen
+Comment[es]=Crea unidades USB multiarranque para archivos ISO, WIM, IMG y VHD sin reformatear
+Comment[fr]=Créer des clés USB multi-boot pour fichiers ISO, WIM, IMG et VHD sans reformater
+Comment[zh_CN]=制作支持 ISO/WIM/IMG/VHD 镜像的多合一启动 U 盘，无需反复格式化
+Exec=rudy-gui %U
+Icon=dev.rudy.Rudy
+Terminal=false
+Categories=System;Filesystem;
+Keywords=rudy;usb;iso;boot;bootable;flash;installer;live;multiboot;
+StartupNotify=true
+StartupWMClass=rudy-gui
+MimeType=application/x-cd-image;application/x-raw-disk-image;application/x-iso9660-image;

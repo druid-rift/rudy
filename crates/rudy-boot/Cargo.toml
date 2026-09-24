@@ -1,0 +1,59 @@
+[package]
+name = "rudy-boot"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Rudy's UEFI boot payload: the menu a Rudy drive shows when it starts."
+
+# The payload's portable half — everything that is not a firmware call. It is
+# `no_std` when built for the drive and ordinary Rust under `cargo test`, which
+# is what lets a filesystem reader be proven on the bench rather than in a VM.
+[lib]
+name = "rudy_boot"
+path = "src/lib.rs"
+
+# The EFI application itself. On a host build this target is a stub that says
+# what it is: the firmware half cannot link there, and `cargo build` at the
+# workspace root must not fail because of it.
+[[bin]]
+name = "rudy-boot"
+path = "src/main.rs"
+
+# Only ever pulled in for the drive. A host `cargo test`, `cargo clippy` or
+# `cargo build` never resolves it, which is why a fifth crate costs the other
+# four nothing.
+# Host-only, and never built for the drive: the tests that prove a filesystem
+# reader make real filesystems with the same tools a user's drive was made by.
+[dev-dependencies]
+tempfile.workspace = true
+# Host-only, and for one test: the boot log is written by this crate and read by
+# `rudy_core::boot_log`, and nothing at compile time holds the two formats
+# together. `tests/boot_log_contract_test.rs` does. `rudy-core` is `std` and can
+# never be a *dependency* of the payload — it is only ever linked into its tests.
+rudy-core.workspace = true
+
+[target.'cfg(target_os = "uefi")'.dependencies]
+uefi = { version = "0.40", default-features = false, features = ["alloc", "global_allocator"] }
+# The raw protocol definitions, for the one protocol this payload *implements*
+# rather than calls: `LoadFile2`, which is how a Linux EFI stub fetches its
+# initrd and therefore why the x86 boot protocol is not owed here. `uefi` wraps
+# it for consumers only, so the server side names the raw crate.
+uefi-raw = "0.16"
+
+# The filesystem readers, which are the reason ADR 0004 chose GRUB (RB-03).
+# `ntfs` is published in the `no-std` category and is read-only by
+# construction; `binrw` is named only because `NtfsReadSeek` takes the
+# underlying reader as a `binrw::io::Read + Seek` parameter, and `fs::Cursor` is
+# what implements it. Both are built for the host too: that is what lets the
+# readers be proven against images `mkfs.ntfs` and `mkfs.exfat` wrote.
+[dependencies]
+ntfs = { version = "0.4", default-features = false }
+binrw = { version = "0.11", default-features = false }
+# The graphical menu's glyphs (`gfx.rs`): Noto Sans Mono, rasterised ahead of
+# time into the crate, so nothing is read off partition 2 to draw a letter and
+# nothing is pinned beside the payload. Regular and bold, four sizes, ASCII only
+# — what the menu prints (`menu.rs`: everything printed is ASCII).
+noto-sans-mono-bitmap = { version = "0.3", default-features = false, features = ["regular", "bold", "size_16", "size_20", "size_24", "size_32", "unicode-basic-latin"] }

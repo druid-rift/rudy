@@ -1,0 +1,781 @@
+import { Button, VerticalBox, HorizontalBox, ComboBox, ProgressIndicator, ScrollView } from "std-widgets.slint";
+
+export struct IsoItemData {
+    name: string,
+    path: string,
+    size_text: string,
+}
+
+// One drive as the picker lists it, built by `view_model::drive_rows`.
+export struct DriveRowData {
+    name: string,
+    // The device node, handed back to Rust as the target. Empty for the
+    // placeholder row, which is what keeps every destructive control disabled.
+    id: string,
+    // `RudyStatus::short_label`: the words `rudy list` prints for this drive.
+    status: string,
+    installed: bool,
+    // Whether to *offer* the in-place update. Wider than `installed` on
+    // purpose: it also covers an interrupted install (the drive the update
+    // exists to repair, CONTEXT.md §1) and a drive Rudy could not read, which
+    // is every drive on an unprivileged desktop. `run_install` re-derives the
+    // real answer from the authorized descriptor and refuses a disk with no
+    // Rudy table, so this decides what is shown and never what is safe.
+    update_offerable: bool,
+    // Non-empty when Rudy could not read the drive at all. `installed` is
+    // false for such a drive, which is honest but on its own renders as the
+    // finding "Not Installed"; this is the reason, and it is what stops the
+    // destructive action being the only one offered without explanation.
+    unreadable_reason: string,
+    // Whether the probe read the drive at all. "Not initialized" is a finding
+    // and needs this; a drive Rudy only failed to open gets neither a finding
+    // nor a warning.
+    probed: bool,
+    // Refused by the installer whatever is confirmed, so never offered.
+    is_system: bool,
+    // A removable USB device. Anything else is still selectable, but its
+    // confirmation carries a stronger warning — the installer refuses only
+    // *system* disks, so an internal data drive would otherwise be one
+    // unconfirmed click from being erased.
+    is_removable: bool,
+}
+
+export component RudyMainWindow inherits Window {
+    title: "Rudy — Multi-boot USB Manager";
+    preferred-width: 720px;
+    preferred-height: 560px;
+    min-width: 640px;
+    min-height: 480px;
+    background: #121214;
+    default-font-family: "sans-serif";
+
+    callback refresh_drives();
+    callback start_install(string, string, string); // (device_id, scheme, filesystem)
+    callback start_update(string);                   // (device_id)
+    callback open_file_manager();
+    callback add_iso_files();
+    callback delete_iso(string);                     // (file_path)
+    callback drive_selected(int);                    // (selected_index)
+
+    // Every drive the picker lists, one row each, after a placeholder at row 0
+    // that selects nothing. The placeholder is always there so that "no drive
+    // selected" is a row: Slint's ComboBox clamps an index naming no row back
+    // onto one whenever its model changes. Everything about a drive travels in
+    // its row, so there is no second list to fall out of step with it (AR-11).
+    in-out property <[DriveRowData]> drives: [{ name: "Scanning for USB devices..." }];
+    // The picker's labels: each row's `name`, set by Rust as a view over the
+    // same model because a ComboBox takes `[string]`. Never set on its own.
+    in-out property <[string]> drive_names: ["Scanning for USB devices..."];
+    in-out property <int> selected_drive_index: 0;
+    // The row the picker shows as selected. Every guard below reads this, so
+    // each follows the live selection — and an index naming no row reads as an
+    // empty one, with no id, so nothing destructive is offered.
+    property <DriveRowData> selected_drive: root.drives[root.selected_drive_index];
+    property <bool> selected_drive_unreadable: root.selected_drive.unreadable_reason != "";
+    // True when partition 1 is mounted and the ISO manager can actually work.
+    // The surface used to hang off the installed probe, which needs a read the
+    // shipping path cannot do — so a drive Rudy had just written showed
+    // "Drive Not Prepared" and offered no way in (flatpak 13).
+    in-out property <bool> selected_drive_iso_manager_ready: false;
+    // Two-step arm/confirm for the destructive action.
+    in-out property <bool> install_armed: false;
+
+    in-out property <string> app_package_version: "1.0.99";
+    in-out property <string> active_tab: "iso_manager"; // "iso_manager" | "drive_setup"
+    // Set by Rust after an install completes and cleared by the first image that
+    // lands. It only chooses which empty-state copy renders below — nothing is
+    // gated on it, so a user who ignores it still has a fully usable drive.
+    in-out property <bool> first_run_prompt: false;
+
+    // ISO Manager Properties
+    in-out property <[IsoItemData]> iso_list: [];
+    // Non-empty when the image list is known to be short because a directory
+    // could not be read. The images found are still listed; this is what stops
+    // a short list from reading as a complete one.
+    in-out property <string> iso_scan_warning: "";
+    in-out property <string> mount_path_text: "";
+    in-out property <string> drive_capacity_text: "0 GB / 0 GB Free";
+    in-out property <float> drive_used_percent: 0.0;
+    in-out property <bool> is_copying_iso: false;
+    in-out property <string> copy_status_text: "";
+    in-out property <float> copy_progress_percent: 0.0;
+
+    // Drive Setup Properties
+    in-out property <string> selected_scheme: "GPT";
+    in-out property <string> selected_fs: "NTFS";
+
+    // Operation State
+    in-out property <string> ui_state: "idle"; // "idle" | "running" | "completed" | "error"
+    in-out property <string> current_phase_text: "Ready";
+    in-out property <float> progress_stage_percent: 0.0;
+    in-out property <float> progress_total_percent: 0.0;
+    in-out property <string> throughput_text: "";
+    in-out property <string> error_message: "";
+
+    VerticalBox {
+        padding: 20px;
+        spacing: 14px;
+
+        // Top Header
+        HorizontalBox {
+            alignment: space-between;
+            VerticalBox {
+                spacing: 2px;
+                HorizontalBox {
+                    spacing: 8px;
+                    Text {
+                        text: "RUDY";
+                        font-size: 22px;
+                        font-weight: 800;
+                        color: #fafafa;
+                        letter-spacing: 1px;
+                    }
+                    Rectangle {
+                        background: #2563eb;
+                        border-radius: 4px;
+                        HorizontalBox {
+                            padding-left: 6px; padding-right: 6px; padding-top: 2px; padding-bottom: 2px;
+                            Text {
+                                text: "USB MANAGER";
+                                font-size: 10px;
+                                font-weight: 700;
+                                color: #ffffff;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+                Text {
+                    text: "Fast, Memory-Safe Multi-Boot USB System";
+                    font-size: 12px;
+                    color: #71717a;
+                }
+            }
+
+            // Version Badge & Tab Switcher
+            HorizontalBox {
+                spacing: 8px;
+                alignment: end;
+                Rectangle {
+                    background: root.active_tab == "iso_manager" ? #3b82f6 : #27272a;
+                    border-radius: 6px;
+                    HorizontalBox {
+                        padding-left: 12px; padding-right: 12px; padding-top: 6px; padding-bottom: 6px;
+                        Text {
+                            text: "ISO Manager";
+                            font-size: 12px;
+                            font-weight: 700;
+                            color: root.active_tab == "iso_manager" ? #ffffff : #a1a1aa;
+                            vertical-alignment: center;
+                        }
+                    }
+                    TouchArea {
+                        clicked => { root.active_tab = "iso_manager"; }
+                    }
+                }
+                Rectangle {
+                    background: root.active_tab == "drive_setup" ? #3b82f6 : #27272a;
+                    border-radius: 6px;
+                    HorizontalBox {
+                        padding-left: 12px; padding-right: 12px; padding-top: 6px; padding-bottom: 6px;
+                        Text {
+                            text: "Drive Setup";
+                            font-size: 12px;
+                            font-weight: 700;
+                            color: root.active_tab == "drive_setup" ? #ffffff : #a1a1aa;
+                            vertical-alignment: center;
+                        }
+                    }
+                    TouchArea {
+                        clicked => { root.active_tab = "drive_setup"; }
+                    }
+                }
+            }
+        }
+
+        // Target Storage Device Selector Card
+        Rectangle {
+            background: #1e1e22;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: #2e2e34;
+            VerticalBox {
+                padding: 14px;
+                spacing: 10px;
+                HorizontalBox {
+                    alignment: space-between;
+                    Text {
+                        text: "TARGET STORAGE DRIVE";
+                        font-size: 11px;
+                        font-weight: 700;
+                        color: #a1a1aa;
+                        letter-spacing: 0.5px;
+                    }
+                    // Three states, not two. "Not Installed" is a finding, and
+                    // Rudy must not report one about a drive it could not read.
+                    // The words are core's, so this and `rudy list` agree —
+                    // a corrupt drive used to read "Not Installed" here.
+                    Text {
+                        text: root.selected_drive.id == "" || root.selected_drive.status == ""
+                            ? ""
+                            : (root.selected_drive_unreadable ? "◍ "
+                                : root.selected_drive.installed ? "● " : "○ ")
+                                + root.selected_drive.status;
+                        font-size: 11px;
+                        font-weight: 600;
+                        color: root.selected_drive_unreadable
+                            ? #fbbf24
+                            : root.selected_drive.installed
+                            ? #22c55e
+                            : #a1a1aa;
+                    }
+                }
+                HorizontalBox {
+                    spacing: 8px;
+                    ComboBox {
+                        model: root.drive_names;
+                        current-index <=> root.selected_drive_index;
+                        enabled: root.ui_state == "idle" && !root.is_copying_iso;
+                        horizontal-stretch: 1;
+                        // Choosing a drive disarms a confirmation opened for
+                        // another. The confirm button's guard follows the
+                        // selection regardless; this is so the question on
+                        // screen is never about a drive the user just left.
+                        selected(_val) => {
+                            root.install_armed = false;
+                            root.drive_selected(self.current-index);
+                        }
+                    }
+                    Button {
+                        text: "Refresh";
+                        enabled: root.ui_state == "idle" && !root.is_copying_iso;
+                        clicked => { root.refresh_drives(); }
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // TAB 1: ISO MANAGER VIEW
+        // ==========================================
+        if root.active_tab == "iso_manager": VerticalBox {
+            spacing: 12px;
+            vertical-stretch: 1;
+
+            // Capacity & Action Bar Card
+            Rectangle {
+                background: #1e1e22;
+                border-radius: 8px;
+                border-width: 1px;
+                border-color: #2e2e34;
+                VerticalBox {
+                    padding: 14px;
+                    spacing: 10px;
+
+                    HorizontalBox {
+                        alignment: space-between;
+                        Text {
+                            text: "DRIVE STORAGE SPACE";
+                            font-size: 11px;
+                            font-weight: 700;
+                            color: #a1a1aa;
+                        }
+                        Text {
+                            text: root.drive_capacity_text;
+                            font-size: 12px;
+                            font-weight: 600;
+                            color: #38bdf8;
+                        }
+                    }
+
+                    ProgressIndicator {
+                        progress: root.drive_used_percent;
+                    }
+
+                    if root.selected_drive_iso_manager_ready: HorizontalBox {
+                        spacing: 10px;
+                        alignment: space-between;
+                        HorizontalBox {
+                            spacing: 8px;
+                            Button {
+                                text: "+ Add ISO / Boot Image";
+                                primary: true;
+                                enabled: root.ui_state == "idle" && !root.is_copying_iso;
+                                clicked => { root.add_iso_files(); }
+                            }
+                            Button {
+                                text: "Open in File Manager";
+                                enabled: root.ui_state == "idle";
+                                clicked => { root.open_file_manager(); }
+                            }
+                        }
+                        Text {
+                            text: "Mount: " + root.mount_path_text;
+                            font-size: 11px;
+                            color: #71717a;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+
+                    if !root.selected_drive_iso_manager_ready: HorizontalBox {
+                        spacing: 10px;
+                        alignment: space-between;
+                        // "Not initialized" is a finding. An unreadable drive
+                        // gets the reason instead, because it may well be
+                        // initialized and Rudy has no way to know.
+                        Text {
+                            text: root.selected_drive.id == ""
+                                ? "Select a drive above to manage its images."
+                                : root.selected_drive_unreadable
+                                ? root.selected_drive.unreadable_reason
+                                : !root.selected_drive.probed
+                                ? "Rudy can't list images until this drive's RUDY partition is mounted. If it isn't a Rudy drive yet, set it up on Drive Setup."
+                                : "This drive is not initialized yet. Format with Rudy to start copying ISOs.";
+                            font-size: 12px;
+                            color: #fbbf24;
+                            vertical-alignment: center;
+                            wrap: word-wrap;
+                            horizontal-stretch: 1;
+                        }
+                        Button {
+                            text: "Go to Drive Setup →";
+                            primary: true;
+                            clicked => { root.active_tab = "drive_setup"; }
+                        }
+                    }
+                }
+            }
+
+            // Active Copying Card
+            if root.is_copying_iso: Rectangle {
+                background: #1e293b;
+                border-radius: 8px;
+                border-width: 1px;
+                border-color: #3b82f6;
+                VerticalBox {
+                    padding: 12px;
+                    spacing: 8px;
+                    HorizontalBox {
+                        alignment: space-between;
+                        Text {
+                            text: root.copy_status_text;
+                            font-size: 13px;
+                            font-weight: 600;
+                            color: #93c5fd;
+                        }
+                        Text {
+                            text: Math.round(root.copy_progress_percent * 100) + "%";
+                            font-size: 13px;
+                            font-weight: 700;
+                            color: #38bdf8;
+                        }
+                    }
+                    ProgressIndicator {
+                        progress: root.copy_progress_percent;
+                    }
+                }
+            }
+
+            // Says the list below is short, when a directory could not be read.
+            // Without it a partial scan renders exactly like a complete one.
+            if root.iso_scan_warning != "": Rectangle {
+                background: #3a2e1a;
+                border-radius: 6px;
+                border-width: 1px;
+                border-color: #6b5424;
+                height: warning_text.preferred-height + 16px;
+                warning_text := Text {
+                    x: 10px;
+                    width: parent.width - 20px;
+                    text: "⚠ " + root.iso_scan_warning;
+                    color: #e8c07a;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                    vertical-alignment: center;
+                }
+            }
+
+            // ISO Files List or Dropzone Empty State
+            Rectangle {
+                background: #1e1e22;
+                border-radius: 8px;
+                border-width: 1px;
+                border-color: #2e2e34;
+                vertical-stretch: 1;
+
+                if root.iso_list.length > 0: ScrollView {
+                    viewport-height: (root.iso_list.length * 52px) + 20px;
+                    VerticalBox {
+                        padding: 10px;
+                        spacing: 6px;
+                        // Plain layouts, not Boxes: each Box adds the style's
+                        // padding, and three of them inside a fixed-height row
+                        // squashed the name, the size and Delete (2026-09-14).
+                        for iso in root.iso_list: Rectangle {
+                            min-height: 44px;
+                            background: #27272a;
+                            border-radius: 6px;
+                            HorizontalLayout {
+                                padding-left: 12px; padding-right: 12px;
+                                padding-top: 6px; padding-bottom: 6px;
+                                spacing: 12px;
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    horizontal-stretch: 1;
+                                    Text {
+                                        text: "💿";
+                                        font-size: 14px;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: iso.name;
+                                        // The name takes the row's spare width. Left
+                                        // unset, the layout shared it with the icon and
+                                        // the name started mid-row (2026-09-14).
+                                        horizontal-stretch: 1;
+                                        font-size: 13px;
+                                        font-weight: 600;
+                                        color: #f4f4f5;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                }
+                                HorizontalLayout {
+                                    spacing: 12px;
+                                    alignment: end;
+                                    Rectangle {
+                                        background: #3f3f46;
+                                        border-radius: 4px;
+                                        HorizontalLayout {
+                                            padding-left: 8px; padding-right: 8px; padding-top: 3px; padding-bottom: 3px;
+                                            Text {
+                                                text: iso.size_text;
+                                                font-size: 11px;
+                                                font-weight: 700;
+                                                color: #38bdf8;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+                                    }
+                                    Button {
+                                        text: "Delete";
+                                        enabled: !root.is_copying_iso;
+                                        clicked => { root.delete_iso(iso.path); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if root.iso_list.length == 0: VerticalBox {
+                    alignment: center;
+                    spacing: 10px;
+                    // All three of these follow `selected_drive_iso_manager_ready`
+                    // first, because that is what gates the "+ Add ISO / Boot
+                    // Image" button above. They used to follow `first_run_prompt`
+                    // alone, so a drive whose partition 1 was not mounted got a
+                    // party popper, "Your drive is ready", and an instruction to
+                    // click a control this state does not render (flatpak 15).
+                    Text {
+                        text: !root.selected_drive_iso_manager_ready
+                            ? "📁"
+                            : root.first_run_prompt ? "🎉" : "📁";
+                        font-size: 36px;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: root.selected_drive.id == ""
+                            ? "No drive selected"
+                            : !root.selected_drive_iso_manager_ready
+                            ? "No images to show"
+                            : root.first_run_prompt
+                                ? "Your drive is ready — add your first ISO"
+                                : "No Bootable Images on USB";
+                        font-size: 15px;
+                        font-weight: 700;
+                        color: #e4e4e7;
+                        horizontal-alignment: center;
+                    }
+                    // Only a drive that was actually selected gets a second
+                    // line. With an empty picker nothing was reached for, so
+                    // "Rudy cannot reach this drive's data partition" named a
+                    // failure that never happened, on a drive that did not
+                    // exist — and the panel above was saying "No drive
+                    // selected" at the same time (AR-30).
+                    if root.selected_drive.id != "": Text {
+                        text: !root.selected_drive_iso_manager_ready
+                            ? "Rudy cannot reach this drive's data partition — the panel above says why."
+                            : root.first_run_prompt
+                                ? "Click '+ Add ISO / Boot Image' above, or just drag ISOs onto the drive in your file manager — Rudy finds them in any folder."
+                                : "Click '+ Add ISO / Boot Image' above or copy ISOs directly into the drive.";
+                        font-size: 12px;
+                        color: #71717a;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // TAB 2: DRIVE SETUP / UPDATE VIEW
+        // ==========================================
+        if root.active_tab == "drive_setup": VerticalBox {
+            spacing: 12px;
+            vertical-stretch: 1;
+
+            Rectangle {
+                background: #1e1e22;
+                border-radius: 8px;
+                border-width: 1px;
+                border-color: #2e2e34;
+                VerticalBox {
+                    padding: 16px;
+                    spacing: 12px;
+
+                    Text {
+                        text: "PARTITION & FORMAT SETTINGS";
+                        font-size: 11px;
+                        font-weight: 700;
+                        color: #a1a1aa;
+                    }
+
+                    HorizontalBox {
+                        spacing: 16px;
+                        HorizontalBox {
+                            spacing: 8px;
+                            Text { text: "Partition Scheme:"; color: #d4d4d8; font-size: 13px; vertical-alignment: center; }
+                            ComboBox {
+                                model: ["GPT", "MBR"];
+                                current-value <=> root.selected_scheme;
+                                enabled: root.ui_state == "idle";
+                            }
+                        }
+                        HorizontalBox {
+                            spacing: 8px;
+                            Text { text: "Filesystem:"; color: #d4d4d8; font-size: 13px; vertical-alignment: center; }
+                            ComboBox {
+                                model: ["NTFS", "exFAT", "FAT32", "ext4"];
+                                current-value <=> root.selected_fs;
+                                enabled: root.ui_state == "idle";
+                            }
+                        }
+                    }
+
+                    // The filesystem decides which images will boot, and the
+                    // reason is inside each image's own initramfs where nothing
+                    // Rudy does can reach it. A user who picks the wrong one
+                    // finds out at a rescue prompt on another machine, so the
+                    // trade-off is spelled out at the moment of the choice.
+                    Text {
+                        text: root.selected_fs == "NTFS"
+                            ? "Boots Ubuntu and Arch images. Fedora needs exFAT instead."
+                            : root.selected_fs == "exFAT"
+                            ? "Boots Fedora and Arch. Ubuntu cannot find images on exFAT."
+                            : root.selected_fs == "FAT32"
+                            ? "Testing only — FAT32 cannot hold a file over 4 GiB."
+                            : "Testing only — not a supported boot layout.";
+                        color: #a1a1aa;
+                        font-size: 11px;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            if root.ui_state == "idle" && root.install_armed: Rectangle {
+                background: #3a1d1d;
+                border-radius: 8px;
+                border-width: 1px;
+                border-color: #ef4444;
+                VerticalBox {
+                    padding: 12px;
+                    spacing: 8px;
+                    Text {
+                        text: "Erase " + root.selected_drive.name + "?";
+                        color: #fca5a5;
+                        font-size: 15px;
+                        font-weight: 700;
+                        wrap: word-wrap;
+                    }
+                    Text {
+                        text: root.selected_drive.is_removable
+                            ? "Every file on this drive will be destroyed. This cannot be undone."
+                            : "This is NOT a removable USB device. Every file on it will be destroyed. This cannot be undone.";
+                        color: root.selected_drive.is_removable ? #d4d4d8 : #fecaca;
+                        font-size: 13px;
+                        wrap: word-wrap;
+                    }
+                    HorizontalBox {
+                        spacing: 12px;
+                        Button {
+                            text: "Cancel";
+                            horizontal-stretch: 1;
+                            clicked => { root.install_armed = false; }
+                        }
+                        Button {
+                            text: "Erase and install";
+                            primary: true;
+                            horizontal-stretch: 1;
+                            // Restated, not inherited. The Install button that
+                            // arms this panel carries the same guard, but a
+                            // guard on the way in is not a guard on the way out.
+                            // The placeholder row is not a system disk, so the
+                            // id is asked for here too, and nothing may be
+                            // confirmed while a copy is writing to the drive.
+                            enabled: !root.selected_drive.is_system
+                                && root.selected_drive.id != ""
+                                && !root.is_copying_iso;
+                            clicked => {
+                                root.install_armed = false;
+                                root.start_install(
+                                    root.selected_drive.id,
+                                    root.selected_scheme,
+                                    root.selected_fs
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            // A drive that opened and then failed to read. The ordinary
+            // permission-denied case is not narrated: it read the same for every
+            // drive and said nothing about any of them (2026-09-14). The line
+            // under the buttons says what each action does instead.
+            if root.ui_state == "idle" && !root.install_armed && root.selected_drive_unreadable: Rectangle {
+                background: #3a2f18;
+                border-radius: 8px;
+                border-width: 1px;
+                border-color: #fbbf24;
+                VerticalBox {
+                    padding: 12px;
+                    spacing: 6px;
+                    Text {
+                        text: "Rudy could not read this drive";
+                        color: #fde68a;
+                        font-size: 13px;
+                        font-weight: 700;
+                        wrap: word-wrap;
+                    }
+                    Text {
+                        text: root.selected_drive.unreadable_reason;
+                        color: #d4d4d8;
+                        font-size: 12px;
+                        wrap: word-wrap;
+                    }
+                    Text {
+                        text: "Nothing here proves the drive is already prepared — not that it isn't. Update Rudy (In-Place) is still offered: it will ask for permission, read the drive, and stop if there is no Rudy installation on it. Installing will erase it.";
+                        color: #d4d4d8;
+                        font-size: 12px;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            if root.ui_state == "idle" && !root.install_armed: HorizontalBox {
+                spacing: 12px;
+                Button {
+                    text: "Install Rudy (Fresh Format)";
+                    primary: true;
+                    horizontal-stretch: 1;
+                    // A system disk is refused by the worker anyway; do not offer
+                    // it. Nor anything while images are being copied: an install
+                    // unmounts the partition being written, and Rust refuses the
+                    // overlap regardless.
+                    enabled: !root.selected_drive.is_system
+                        && root.selected_drive.id != ""
+                        && !root.is_copying_iso;
+                    clicked => { root.install_armed = true; }
+                }
+                Button {
+                    text: "Update Rudy (In-Place)";
+                    enabled: root.selected_drive.update_offerable
+                        && !root.selected_drive.is_system
+                        && !root.is_copying_iso;
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.start_update(root.selected_drive.id);
+                    }
+                }
+            }
+
+            if root.ui_state == "idle" && !root.install_armed && root.selected_drive.id != "": Text {
+                text: "Install erases the drive. Update checks it first and stops if Rudy isn't on it.";
+                font-size: 12px;
+                color: #a1a1aa;
+                wrap: word-wrap;
+            }
+        }
+
+        // ==========================================
+        // WORKER STATUS / PROGRESS / ALERTS
+        // ==========================================
+        if root.ui_state == "running": Rectangle {
+            background: #1e1e22;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: #3b82f6;
+            VerticalBox {
+                padding: 16px;
+                spacing: 10px;
+                Text {
+                    text: root.current_phase_text;
+                    font-size: 14px;
+                    font-weight: 600;
+                    color: #fafafa;
+                }
+                ProgressIndicator {
+                    progress: root.progress_stage_percent;
+                }
+                HorizontalBox {
+                    alignment: space-between;
+                    Text { text: root.throughput_text; font-size: 12px; color: #a1a1aa; }
+                    Text { text: Math.round(root.progress_total_percent * 100) + "% overall"; font-size: 12px; color: #a1a1aa; }
+                }
+            }
+        }
+
+        if root.ui_state == "completed": Rectangle {
+            background: #064e3b;
+            border-radius: 8px;
+            HorizontalBox {
+                padding: 14px;
+                alignment: space-between;
+                Text {
+                    text: "✓ Rudy successfully prepared! You can now add ISO boot images directly.";
+                    color: #6ee7b7;
+                    font-size: 13px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+                // Rust already switched to the ISO manager and rescanned when the
+                // install completed, so this only dismisses the banner.
+                Button {
+                    text: "Dismiss";
+                    clicked => { root.ui_state = "idle"; }
+                }
+            }
+        }
+
+        if root.ui_state == "error": Rectangle {
+            background: #7f1d1d;
+            border-radius: 8px;
+            HorizontalBox {
+                padding: 14px;
+                alignment: space-between;
+                Text {
+                    text: "✗ Error: " + root.error_message;
+                    color: #fca5a5;
+                    font-size: 13px;
+                    vertical-alignment: center;
+                }
+                Button {
+                    text: "Dismiss";
+                    clicked => { root.ui_state = "idle"; }
+                }
+            }
+        }
+    }
+}

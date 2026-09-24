@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Blocks a commit that would put the bench's identity in the repository.
+# Enable it once per clone:  git config core.hooksPath .githooks
+set -uo pipefail
+
+# R is not optional: a file that is `git mv`'d and then edited is staged as a
+# rename, and ACM alone skipped it. That is how a moved test carried a
+# forbidden path past this hook and was caught only by the whole-tree check.
+mapfile -t staged < <(git diff --cached --name-only --diff-filter=ACMR)
+[[ ${#staged[@]} -gt 0 ]] || exit 0
+
+exec ./scripts/check-no-identifying-data.sh "${staged[@]}"
