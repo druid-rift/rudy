@@ -31,6 +31,13 @@ use std::path::{Path, PathBuf};
 /// so a multi-gigabyte image does not become a multi-gigabyte allocation.
 const COPY_BUFFER_BYTES: usize = 1024 * 1024;
 
+/// How far the drive may fall behind the progress bar. Without a bound the
+/// kernel holds as much of the image as its dirty-page limit allows — gigabytes
+/// on a default desktop — so the bar reached 100% while the final flush still
+/// had minutes of writing to a slow stick ahead of it, and a user who took 100%
+/// at its word closed the window on an unpublished `.rudy-partial`.
+const SYNC_INTERVAL_BYTES: u64 = 64 * 1024 * 1024;
+
 /// Suffix for a staging file, chosen so that ISO discovery does not list it as
 /// an image. A half-written file must never appear in the boot menu, and the
 /// menu is built at boot time from whatever is on the partition — so the
@@ -455,7 +462,14 @@ fn stream<R: Read, P: PendingImage>(
                 cause,
             })?;
 
+        let before = copied_bytes;
         copied_bytes += read_bytes as u64;
+        if before / SYNC_INTERVAL_BYTES != copied_bytes / SYNC_INTERVAL_BYTES {
+            pending.flush_to_disk().map_err(|cause| CopyError::Flush {
+                name: file_name.to_string(),
+                cause,
+            })?;
+        }
         progress(copied_bytes, expected_bytes);
     }
 
@@ -816,6 +830,66 @@ mod tests {
         assert!(matches!(failure.cause(), CopyError::Source { .. }));
         assert!(failure.to_string().contains("arch.iso"), "{failure}");
         assert!(entries(dest.path()).is_empty());
+    }
+
+    /// Counts what reached the "drive" and what was only written, so a test
+    /// can ask how far behind the progress bar the drive was allowed to fall.
+    struct CountingStaging {
+        written: std::rc::Rc<std::cell::Cell<u64>>,
+        synced: std::rc::Rc<std::cell::Cell<u64>>,
+    }
+
+    impl Write for CountingStaging {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.written.set(self.written.get() + buf.len() as u64);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl PendingImage for CountingStaging {
+        fn flush_to_disk(&mut self) -> io::Result<()> {
+            self.synced.set(self.written.get());
+            Ok(())
+        }
+        fn publish(self, _: &Path) -> Result<(), (Self, io::Error)> {
+            Ok(())
+        }
+        fn discard(self) -> io::Result<()> {
+            Ok(())
+        }
+        fn staging_path(&self) -> PathBuf {
+            PathBuf::new()
+        }
+    }
+
+    #[test]
+    fn the_drive_never_falls_more_than_one_interval_behind_the_progress_bar() {
+        let written = std::rc::Rc::new(std::cell::Cell::new(0));
+        let synced = std::rc::Rc::new(std::cell::Cell::new(0));
+        let size = 3 * SYNC_INTERVAL_BYTES + 5 * 1024 * 1024;
+        let mut worst = 0;
+        run_copy(
+            "ubuntu.iso",
+            io::repeat(0).take(size),
+            size,
+            Ok(u64::MAX),
+            || {
+                Ok(CountingStaging {
+                    written: written.clone(),
+                    synced: synced.clone(),
+                })
+            },
+            Path::new("ubuntu.iso"),
+            &mut |reported, _| worst = worst.max(reported - synced.get()),
+        )
+        .expect("copy succeeds");
+        assert!(
+            worst < SYNC_INTERVAL_BYTES,
+            "progress ran {worst} bytes ahead of the drive"
+        );
     }
 
     // ---- preflight, through the production sequence with the observation injected ----

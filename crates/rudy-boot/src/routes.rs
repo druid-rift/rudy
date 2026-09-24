@@ -214,7 +214,7 @@ pub fn route(facts: &ImageFacts, path: &str, device: &str) -> Route {
         };
     }
 
-    // 4. Ubuntu and derivatives without a loopback.cfg route.
+    // 4. Ubuntu and derivatives.
     if facts.has("/casper/vmlinuz") {
         let initrd = ["/casper/initrd", "/casper/initrd.lz", "/casper/initrd.img"]
             .into_iter()
@@ -226,7 +226,9 @@ pub fn route(facts: &ImageFacts, path: &str, device: &str) -> Route {
             layout: "casper",
             kernel: "/casper/vmlinuz".to_string(),
             initrds: vec![initrd.to_string()],
-            cmdline: format!("boot=casper iso-scan/filename={path} quiet splash ---"),
+            // As Ubuntu's own loopback.cfg orders it: curtin copies what follows
+            // ` --- ` into the installed system, so `quiet splash` goes after.
+            cmdline: format!("boot=casper iso-scan/filename={path} --- quiet splash"),
         };
     }
 
@@ -514,9 +516,13 @@ mod tests {
             assert_eq!(layout, "casper");
             assert_eq!(kernel, "/casper/vmlinuz");
             assert_eq!(initrds, vec![expected], "for {present:?}");
+            // curtin carries what follows ` --- ` into the installed system's
+            // kernel command line. Ubuntu's own loopback.cfg puts `quiet
+            // splash` there; a trailing `---` carried nothing, and the
+            // installed system booted without its splash.
             assert_eq!(
                 cmdline,
-                "boot=casper iso-scan/filename=/ubuntu.iso quiet splash ---"
+                "boot=casper iso-scan/filename=/ubuntu.iso --- quiet splash"
             );
         }
     }

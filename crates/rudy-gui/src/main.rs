@@ -652,6 +652,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
+    // Closing mid-operation killed the copy between its last write and its
+    // rename, and the image never appeared in the boot menu.
+    {
+        let app_weak = app_weak.clone();
+        let session = session.clone();
+        main_window.window().on_close_requested(move || {
+            if !session.lock().unwrap().is_busy() {
+                return slint::CloseRequestResponse::HideWindow;
+            }
+            tracing::warn!("not closing: an operation is still writing to the drive");
+            if let Some(app) = app_weak.upgrade() {
+                app.set_iso_scan_warning(SharedString::from(
+                    "Rudy is still writing to the drive. It can close once that finishes.",
+                ));
+            }
+            slint::CloseRequestResponse::KeepWindowShown
+        });
+    }
+
     main_window.run()?;
     Ok(())
 }

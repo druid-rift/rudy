@@ -277,6 +277,14 @@ impl Session {
         self.operation
     }
 
+    /// Whether a copy, delete, install or update is still running. Closing the
+    /// window then would end the process mid-write: a copy left as an
+    /// unpublished `.rudy-partial` the boot menu never lists, an install left
+    /// without its completion mark.
+    pub fn is_busy(&self) -> bool {
+        self.operation.is_some()
+    }
+
     /// Ends the operation `token` started. Returns false, changing nothing,
     /// when `token` is not the running operation — so a completion delivered
     /// late cannot release the busy state of one started since.
@@ -1045,7 +1053,9 @@ mod tests {
             None,
             "a second batch must not start over the first"
         );
+        assert!(session.is_busy(), "the window must not close now");
         assert!(session.end_operation(first));
+        assert!(!session.is_busy());
         assert!(
             session.begin_operation().is_some(),
             "and once it ends, the next may start"

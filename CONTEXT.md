@@ -450,6 +450,7 @@ See ADR 0003. ADR 0001 (pkexec + elevated worker) is superseded.
   - **Drive Storage Breakdown**: Used, free, and total capacity with a visual usage indicator.
   - **Native File Picker (`rfd`)**: Allows picking `.iso`, `.img`, `.wim`, `.vhd`, `.vhdx`, and `.efi` files.
   - **Background Copy Streamer**: Transfers files in non-blocking 1 MiB chunks with live throughput tracking. It owns the whole copy — capacity check, staging, transfer, length check, flush, publication and cleanup — and **an image appears under its final name only once every byte of it has been written and flushed**. Until then the bytes live in a uniquely owned staging file whose name is not an image name, so a partial copy can never be offered as a boot entry, and a replacement's existing image is untouched until the new one is complete. A failed copy therefore leaves the old image exactly as it was. This is not a promise about power loss: the file is flushed before the rename, but the directory entry is not.
+    The copy syncs every 64 MiB, so the progress bar is never more than that ahead of the drive and the final flush is short, and **the window refuses to close while a copy, delete, install or update is running**. *Added 2026-09-24:* the bar used to reach 100% on page-cache speed, a window closed during the tail flush ended the process before the rename, and a complete image stayed on the drive as `*.rudy-partial` — correctly absent from the boot menu, and absent without a word.
   - **System File Manager Integration**: Opens the user's native file explorer at the mounted `"RUDY"` data partition. This is the primary post-install workflow: users drag images onto the drive directly.
   - **ISO Management**: Interactive cards with formatted sizes and delete actions.
 
@@ -502,6 +503,24 @@ The interface the user sees after booting the drive, and the core of the product
     unbooted to evidenced — it is the route Ubuntu takes now that `loopback.cfg` is not read
     — and `loopback.cfg` ceased to exist as a branch. `dracut` is listed as unbooted for the
     first time: it was never separately evidenced, and the Fedora cases take `fedora-live`.*
+
+    *Observed on hardware 2026-09-24: the first complete install from a Rudy drive. The
+    vendor laptop booted the drive, drew the graphical menu with two images, and the `casper`
+    entry ran the Ubuntu 26.04.1 installer through to an installed system.*
+  - **The casper command line is Ubuntu's own order: `--- quiet splash`.** *Changed
+    2026-09-24.* curtin carries what follows ` --- ` into the installed system's kernel
+    command line (`get_carryover_params`, measured in the 26.04.1 installer snap). The port
+    of `rudy.cfg` ended the line with a bare `---`, so an install made from a Rudy drive
+    booted without `quiet splash`.
+  - **An Ubuntu live session does not shut down cleanly, and that is casper's, not Rudy's.**
+    casper mounts the partition holding the image read-write at `/isodevice`
+    (`find_path … /isodevice rw`, hard-coded in `casper-premount/20iso_scan`) and loops the
+    image from it, so at shutdown the loop device under the root cannot be released and the
+    reboot stalls on loop-device write errors. `casper-stop` also skips its "remove the
+    installation medium" prompt by design, because `/cdrom` is a loop device rather than
+    removable media. No kernel argument changes either. The drive's NTFS read clean
+    (`Volume Flags: 0x0000`) after the observed stall; if a hard power-off does leave it
+    dirty, `ntfsfix -d` on partition 1 clears it.
 - **Menu Identity**: the menu names **Rudy** and states that it is asking for a choice,
   before it names any image. Required, not cosmetic: a menu carrying no identity is
   indistinguishable from the installer menu Rudy chainloads into, and a user who cannot tell
