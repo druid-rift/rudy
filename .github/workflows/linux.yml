@@ -17,6 +17,12 @@ on:
   schedule:
     - cron: '0 6 * * 1'
 
+# Read-only unless a job says otherwise. The repository is public and takes pull
+# requests from forks; `pull_request` (never `pull_request_target`) already
+# withholds secrets and write access from those, and this holds the rest to it.
+permissions:
+  contents: read
+
 jobs:
   linux:
     if: github.event_name != 'schedule'
@@ -146,6 +152,11 @@ jobs:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-24.04
     continue-on-error: true
+    # audit-check files an issue per advisory and posts a check run.
+    permissions:
+      contents: read
+      issues: write
+      checks: write
     steps:
       - uses: actions/checkout@v7
       - name: Dependency advisory scan
