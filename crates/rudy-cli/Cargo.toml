@@ -1,0 +1,27 @@
+[package]
+name = "rudy-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "rudy"
+path = "src/main.rs"
+
+[dependencies]
+rudy-core = { workspace = true }
+rudy-platform = { workspace = true }
+clap = { workspace = true }
+indicatif = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+uuid = { workspace = true }
+# The readback fixture matrix, shared with rudy-core's test tree, writes into
+# the payload's FAT filesystem so a fixture cannot encode a layout the real
+# builder would not produce. Test-only: the `rudy` binary reads no filesystem.
+fatfs = { workspace = true }

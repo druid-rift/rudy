@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Blocks a commit whose *message* would put the bench's identity in the history.
+# The message is published with the code, and cannot be amended once pushed.
+set -uo pipefail
+exec ./scripts/check-no-identifying-data.sh --message "$1"

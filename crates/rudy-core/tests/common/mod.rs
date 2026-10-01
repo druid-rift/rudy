@@ -1,0 +1,660 @@
+//! The fixture matrix every raw-readback consumer is characterized against.
+//!
+//! Four consumers read the same bytes off a drive and reach different verdicts,
+//! deliberately: the installed probe answers "what is this drive", the verifier
+//! answers "does it satisfy the contract", the boot-log reader answers "what did
+//! the payload record last time", and the update gate answers "may I repair this
+//! in place". Each was written against its own ad-hoc fixture, so the *shape* of
+//! their disagreement was never written down anywhere — and AR-09 proposes to
+//! share the reads underneath them, which cannot be done safely until it is.
+//!
+//! **These fixtures are inputs, not oracles.** Nothing here asserts. The
+//! expectations live beside each consumer in
+//! `readback_characterization_test.rs`, one row per fixture, so a change in any
+//! consumer shows up as a change to a table a reviewer can read.
+//!
+//! Every fixture is built from the same public builders the installer uses —
+//! `GptBuilder`, `MbrBuilder`, `RudyEfiFatBuilder`, `DiskGeometry` — and then
+//! damaged in one named way. A fixture that hand-assembled a partition table
+//! would be testing the fixture.
+
+#![allow(dead_code)] // the platform tier includes this file and uses a subset
+
+use rudy_core::assets::RudyEfiFatBuilder;
+use rudy_core::models::{FilesystemType, PartitionScheme};
+use rudy_core::partition::{compute_crc32, GptBuilder, MbrBuilder};
+use rudy_core::readback::{ReadAt, ReadError};
+use rudy_core::sector_math::{DiskGeometry, SECTOR_SIZE};
+use rudy_core::signature::RudyDiskHeader;
+use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+use uuid::Uuid;
+
+/// 96 MiB, the same size the CLI image tier provisions. Large enough for a real
+/// two-partition layout with room over, small enough to build in memory for
+/// every row of the matrix.
+pub const DISK_BYTES: u64 = 96 * 1024 * 1024;
+pub const DISK_SECTORS: u64 = DISK_BYTES / SECTOR_SIZE;
+
+/// A fixed GUID, so a fixture's bytes are the same on every run and a golden
+/// expectation can quote them.
+fn disk_guid() -> Uuid {
+    Uuid::parse_str("11111111-2222-3333-4444-555555555555").expect("fixed test GUID")
+}
+
+/// What partition 2 carries.
+#[derive(Clone, Debug)]
+pub enum Payload {
+    /// A well-formed FAT16 ESP with `rudy/version`, as a fresh install leaves it.
+    Fresh,
+    /// The same, plus the environment block the boot payload writes at boot.
+    WithBootLog(&'static str),
+    /// A well-formed ESP whose `rudy/version` has been removed.
+    WithoutVersion,
+    /// A well-formed ESP whose `rudy/version` is bytes no version could be.
+    UnreadableVersion,
+    /// Bytes that are not a filesystem at all.
+    Noise,
+    /// Left as the zeros the blank disk started as.
+    Absent,
+}
+
+/// One named drive, and what a reader is meant to understand it to be.
+pub struct Fixture {
+    pub name: &'static str,
+    /// One sentence, quoted into the characterization table so a reader of the
+    /// expectations does not have to reconstruct the fixture to read them.
+    pub what: &'static str,
+    pub bytes: Vec<u8>,
+}
+
+/// A fixture that has not been built yet.
+///
+/// The matrix is a list of these rather than of built drives because each one
+/// is 96 MiB: materialising the whole matrix at once would put a gigabyte and a
+/// half in a test process for no reason. Callers build one, ask their question,
+/// and drop it.
+pub struct FixtureSpec {
+    pub name: &'static str,
+    pub what: &'static str,
+    build: fn() -> Vec<u8>,
+}
+
+impl FixtureSpec {
+    pub fn build(&self) -> Fixture {
+        Fixture {
+            name: self.name,
+            what: self.what,
+            bytes: (self.build)(),
+        }
+    }
+}
+
+impl Fixture {
+    pub fn reader(&self) -> Cursor<Vec<u8>> {
+        Cursor::new(self.bytes.clone())
+    }
+
+    /// The same drive behind a read counter.
+    pub fn counted(&self) -> CountingReader<rudy_core::readback::SeekReader<Cursor<Vec<u8>>>> {
+        CountingReader::new(rudy_core::readback::SeekReader(self.reader()))
+    }
+
+    pub fn sectors(&self) -> u64 {
+        self.bytes.len() as u64 / SECTOR_SIZE
+    }
+}
+
+/// A drive of zeros: never touched by Rudy, and the only fixture that is
+/// unambiguously not this program's business.
+pub fn blank() -> Vec<u8> {
+    vec![0u8; DISK_BYTES as usize]
+}
+
+/// The version string every fixture's payload carries, where it has one.
+pub const FIXTURE_VERSION: &str = "1.0.99";
+
+/// A GRUB environment block for a drive that reached the menu, waited four
+/// seconds and then booted an entry.
+///
+/// Written in the payload's own vocabulary — `rudy_boot_trace`, `|`-separated
+/// fields, unpadded `H:M:S` stamps from `datehook` — rather than in a shape
+/// invented for the test. A fixture that spelled the fields differently would
+/// characterize the parser against a drive the payload cannot produce.
+pub const BOOTED_ONCE_BLOCK: &str = concat!(
+    "# GRUB Environment Block\n",
+    "# WARNING: Do not edit this file by tools other than grub-editenv!!!\n",
+    "rudy_boot_trace=1|start|images=...|ready=10:14:31|entry=fedora.iso|at=10:14:35\n",
+);
+
+/// A block that is present and holds no trace.
+///
+/// The payload writes the block when it is installed and fills it when it
+/// boots, so this is the ordinary state of a drive that has been prepared and
+/// not yet booted — **and it is not the same as having no block at all**, which
+/// means the payload predates the log or something else wrote this drive.
+/// Collapsing the two would turn "we have not been told" into "it did not
+/// boot".
+pub const NEVER_BOOTED_BLOCK: &str = concat!(
+    "# GRUB Environment Block\n",
+    "# WARNING: Do not edit this file by tools other than grub-editenv!!!\n",
+    "rudy_boot_trace=\n",
+);
+
+/// A complete install, then optionally un-finished by withholding the mark.
+///
+/// `reserve_mb` reaches `DiskGeometry::compute`, so the reserved tail a user
+/// asked for is a fixture dimension rather than a special case.
+pub fn install(scheme: PartitionScheme, reserve_mb: u64, mark: bool, payload: Payload) -> Vec<u8> {
+    let mut disk = blank();
+    let geometry =
+        DiskGeometry::compute(DISK_SECTORS, scheme, reserve_mb).expect("fixture geometry");
+
+    let mut sector0 = match scheme {
+        PartitionScheme::Mbr => {
+            MbrBuilder::build(&geometry, FilesystemType::Ntfs).expect("fixture MBR")
+        }
+        PartitionScheme::Gpt => {
+            let protective =
+                GptBuilder::build_protective_mbr(&geometry).expect("fixture protective MBR");
+            let array = GptBuilder::build_partition_array(&geometry, &disk_guid());
+            let array_crc = compute_crc32(&array);
+            write_at(
+                &mut disk,
+                SECTOR_SIZE,
+                &GptBuilder::build_gpt_header(&geometry, &disk_guid(), true, array_crc),
+            );
+            write_at(&mut disk, 2 * SECTOR_SIZE, &array);
+            write_at(
+                &mut disk,
+                (geometry.total_sectors - 33) * SECTOR_SIZE,
+                &array,
+            );
+            write_at(
+                &mut disk,
+                (geometry.total_sectors - 1) * SECTOR_SIZE,
+                &GptBuilder::build_gpt_header(&geometry, &disk_guid(), false, array_crc),
+            );
+            protective
+        }
+    };
+
+    if let Some(image) = payload_bytes(payload) {
+        write_at(&mut disk, geometry.part2_byte_offset(), &image);
+    }
+
+    if mark {
+        RudyDiskHeader::completion_mark().write_to_mbr(&mut sector0);
+    }
+    write_at(&mut disk, 0, &sector0);
+    disk
+}
+
+fn payload_bytes(payload: Payload) -> Option<Vec<u8>> {
+    match payload {
+        Payload::Absent => None,
+        Payload::Noise => Some(noise(RudyEfiFatBuilder::RUDYEFI_SIZE_BYTES)),
+        Payload::Fresh => Some(populated_esp()),
+        Payload::WithBootLog(block) => {
+            let mut image = populated_esp();
+            write_boot_log(&mut image, block);
+            Some(image)
+        }
+        Payload::WithoutVersion => {
+            let mut image = populated_esp();
+            remove_version(&mut image);
+            Some(image)
+        }
+        Payload::UnreadableVersion => {
+            let mut image = populated_esp();
+            overwrite_version(&mut image, &[0x01, 0x02, 0x00, 0x7f]);
+            Some(image)
+        }
+    }
+}
+
+/// An ESP shaped like the one a real install leaves.
+///
+/// `RudyEfiFatBuilder::build_fresh_image` makes the volume and the version tag;
+/// the bootloader and the boot log's block arrive from the asset bundle, which
+/// these fixtures have no business depending on. They are written here as small
+/// stand-ins so that a *finished install* fixture is one the verifier passes.
+/// Building a payload no install would produce and then recording that the
+/// verifier fails it would characterize the fixture rather than the code.
+///
+/// The contents are stand-ins and nothing asserts against them: `esp.bootx64`
+/// and `esp.boot_log` check presence and non-emptiness, which is all a
+/// structural fixture can honestly carry. Real payload bytes are the boot
+/// tier's business.
+fn populated_esp() -> Vec<u8> {
+    let mut image = RudyEfiFatBuilder::build_fresh_image(FIXTURE_VERSION).expect("fixture ESP");
+    write_file(&mut image, &["EFI", "BOOT"], "BOOTX64.EFI", b"MZ stand-in");
+    write_boot_log(&mut image, NEVER_BOOTED_BLOCK);
+    image
+}
+
+/// Creates `path/name` inside a FAT image, making directories as needed.
+fn write_file(image: &mut [u8], path: &[&str], name: &str, contents: &[u8]) {
+    let fs = fatfs::FileSystem::new(Cursor::new(image), fatfs::FsOptions::new())
+        .expect("fixture ESP is FAT");
+    let mut directory = fs.root_dir();
+    for segment in path {
+        directory = match directory.open_dir(segment) {
+            Ok(existing) => existing,
+            Err(_) => directory.create_dir(segment).expect("create directory"),
+        };
+    }
+    let mut file = directory.create_file(name).expect("create file");
+    file.write_all(contents).expect("write file");
+    file.flush().expect("flush file");
+}
+
+/// Writes the environment block where the boot payload writes it, through the
+/// real filesystem rather than by patching bytes, so the fixture cannot encode
+/// a layout the payload would not produce.
+fn write_boot_log(image: &mut [u8], block: &str) {
+    write_file(
+        image,
+        &rudy_core::boot_log::BOOT_LOG_PATH,
+        rudy_core::boot_log::BOOT_LOG_FILE,
+        block.as_bytes(),
+    );
+}
+
+fn remove_version(image: &mut [u8]) {
+    let fs = fatfs::FileSystem::new(Cursor::new(image), fatfs::FsOptions::new())
+        .expect("fixture ESP is FAT");
+    fs.root_dir()
+        .open_dir("rudy")
+        .expect("fixture ESP has /rudy")
+        .remove("version")
+        .expect("remove version file");
+}
+
+/// A copy of `disk` whose payload carries `bytes` as its version file.
+///
+/// Used to drive the 128-byte version bound from outside, without a second
+/// fixture row: the bound is a property of the *read*, not of a drive.
+pub fn with_version(disk: &[u8], bytes: &[u8]) -> Vec<u8> {
+    let mut disk = disk.to_vec();
+    let geometry =
+        DiskGeometry::compute(DISK_SECTORS, PartitionScheme::Gpt, 0).expect("fixture geometry");
+    let start = geometry.part2_byte_offset() as usize;
+    let end = start + RudyEfiFatBuilder::RUDYEFI_SIZE_BYTES;
+    let mut image = disk[start..end].to_vec();
+    overwrite_version(&mut image, bytes);
+    disk[start..end].copy_from_slice(&image);
+    disk
+}
+
+fn overwrite_version(image: &mut [u8], bytes: &[u8]) {
+    let fs = fatfs::FileSystem::new(Cursor::new(image), fatfs::FsOptions::new())
+        .expect("fixture ESP is FAT");
+    let rudy = fs
+        .root_dir()
+        .open_dir("rudy")
+        .expect("fixture ESP has /rudy");
+    rudy.remove("version").expect("remove version file");
+    let mut file = rudy.create_file("version").expect("recreate version file");
+    file.write_all(bytes).expect("write version bytes");
+    file.flush().expect("flush version bytes");
+}
+
+/// Deterministic non-zero filler. Not random: a fixture whose bytes change
+/// between runs cannot carry a golden expectation.
+pub fn noise(len: usize) -> Vec<u8> {
+    (0..len).map(|i| (i % 251 + 3) as u8).collect()
+}
+
+pub fn write_at(disk: &mut [u8], offset: u64, bytes: &[u8]) {
+    let start = offset as usize;
+    disk[start..start + bytes.len()].copy_from_slice(bytes);
+}
+
+/// A [`ReadAt`] that records every read made through it.
+///
+/// The ticket asks for read and allocation counts **measured**, not for a claim
+/// that sharing saved memory. This is the instrument: it counts calls, sums
+/// bytes, remembers the largest single read, and keeps the ranges so a test can
+/// say *which* read it means.
+pub struct CountingReader<R> {
+    pub inner: R,
+    pub reads: Vec<(u64, usize)>,
+}
+
+impl<R> CountingReader<R> {
+    pub fn new(inner: R) -> Self {
+        Self {
+            inner,
+            reads: Vec::new(),
+        }
+    }
+
+    pub fn count(&self) -> usize {
+        self.reads.len()
+    }
+
+    pub fn bytes(&self) -> usize {
+        self.reads.iter().map(|(_, length)| length).sum()
+    }
+
+    pub fn largest(&self) -> usize {
+        self.reads
+            .iter()
+            .map(|(_, length)| *length)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// How many reads asked for exactly `length` bytes. Used to assert that the
+    /// 32 MiB payload is acquired at most once per operation.
+    pub fn reads_of(&self, length: usize) -> usize {
+        self.reads
+            .iter()
+            .filter(|(_, actual)| *actual == length)
+            .count()
+    }
+}
+
+impl<R: ReadAt> ReadAt for CountingReader<R> {
+    fn read_exact_at(&mut self, offset: u64, into: &mut [u8]) -> Result<(), ReadError> {
+        self.reads.push((offset, into.len()));
+        self.inner.read_exact_at(offset, into)
+    }
+}
+
+/// A reader that fails every read past sector 0.
+///
+/// The unreadable-media case, which no in-memory buffer can produce: a
+/// `Cursor` over a short disk gives `UnexpectedEof`, which is a *different*
+/// condition from a medium that returns an I/O error, and the consumers do not
+/// all treat them alike.
+pub struct FailsAfterSectorZero {
+    inner: Cursor<Vec<u8>>,
+}
+
+impl FailsAfterSectorZero {
+    pub fn new(bytes: Vec<u8>) -> Self {
+        Self {
+            inner: Cursor::new(bytes),
+        }
+    }
+}
+
+impl Read for FailsAfterSectorZero {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        if self.inner.position() >= SECTOR_SIZE {
+            return Err(std::io::Error::other("simulated medium error"));
+        }
+        self.inner.read(buffer)
+    }
+}
+
+impl Seek for FailsAfterSectorZero {
+    fn seek(&mut self, to: SeekFrom) -> std::io::Result<u64> {
+        self.inner.seek(to)
+    }
+}
+
+/// The matrix, in the order the characterization table reports it.
+///
+/// Every row is one drive a user could actually present, or one way a drive can
+/// be damaged. The list is the ticket's work item 1; adding a row means adding
+/// an expectation for every consumer, which is the point.
+pub fn matrix() -> Vec<FixtureSpec> {
+    vec![
+        FixtureSpec {
+            name: "zeroed",
+            what: "a drive of zeros, never touched by Rudy",
+            build: blank,
+        },
+        FixtureSpec {
+            name: "gpt-complete",
+            what: "a finished GPT install: table, payload, and the completion mark",
+            build: gpt_complete,
+        },
+        FixtureSpec {
+            name: "mbr-complete",
+            what: "a finished MBR install",
+            build: mbr_complete,
+        },
+        FixtureSpec {
+            name: "gpt-complete-with-boot-log",
+            what: "a finished GPT install that has since booted and left an environment block",
+            build: gpt_complete_with_boot_log,
+        },
+        FixtureSpec {
+            name: "gpt-complete-with-empty-boot-log",
+            what: "a finished GPT install carrying an environment block it has never filled in",
+            build: gpt_complete_with_empty_boot_log,
+        },
+        FixtureSpec {
+            name: "gpt-table-without-mark",
+            what: "a GPT install interrupted between the table and the mark — repairable in place",
+            build: gpt_table_without_mark,
+        },
+        FixtureSpec {
+            name: "mbr-table-without-mark",
+            what: "the same interruption on an MBR drive",
+            build: mbr_table_without_mark,
+        },
+        FixtureSpec {
+            name: "mark-with-malformed-table",
+            what: "the completion mark stamped over a GPT partition array of noise",
+            build: mark_with_malformed_table,
+        },
+        FixtureSpec {
+            name: "foreign-geometry",
+            what:
+                "a finished GPT install whose partition 1 claims to start where Rudy never puts it",
+            build: foreign_geometry,
+        },
+        FixtureSpec {
+            name: "foreign-gpt",
+            what: "somebody else's ordinary GPT disk, correctly formed and not Rudy's",
+            build: foreign_gpt,
+        },
+        FixtureSpec {
+            name: "bad-gpt-header-crc",
+            what: "a finished GPT install whose primary header CRC no longer matches",
+            build: bad_gpt_header_crc,
+        },
+        FixtureSpec {
+            name: "unreadable-gpt-array",
+            what: "a drive truncated after sector 0, so the partition array cannot be read",
+            build: truncated_after_sector_zero,
+        },
+        FixtureSpec {
+            name: "bad-fat-payload",
+            what: "a finished install whose partition 2 is not a filesystem",
+            build: bad_fat_payload,
+        },
+        FixtureSpec {
+            name: "missing-version",
+            what: "a finished install whose payload has no /rudy/version",
+            build: missing_version,
+        },
+        FixtureSpec {
+            name: "unreadable-version",
+            what: "a finished install whose /rudy/version holds control bytes",
+            build: unreadable_version,
+        },
+        FixtureSpec {
+            name: "reserved-tail",
+            what: "a finished GPT install that left 16 MiB of the drive unpartitioned",
+            build: reserved_tail,
+        },
+        FixtureSpec {
+            name: "dirty-reserved-gap",
+            what: "a finished GPT install with a BIOS bootloader left in the reserved gap",
+            build: dirty_reserved_gap,
+        },
+    ]
+}
+
+fn gpt_complete() -> Vec<u8> {
+    install(PartitionScheme::Gpt, 0, true, Payload::Fresh)
+}
+
+fn mbr_complete() -> Vec<u8> {
+    install(PartitionScheme::Mbr, 0, true, Payload::Fresh)
+}
+
+fn gpt_complete_with_boot_log() -> Vec<u8> {
+    install(
+        PartitionScheme::Gpt,
+        0,
+        true,
+        Payload::WithBootLog(BOOTED_ONCE_BLOCK),
+    )
+}
+
+fn gpt_complete_with_empty_boot_log() -> Vec<u8> {
+    install(
+        PartitionScheme::Gpt,
+        0,
+        true,
+        Payload::WithBootLog(NEVER_BOOTED_BLOCK),
+    )
+}
+
+fn gpt_table_without_mark() -> Vec<u8> {
+    install(PartitionScheme::Gpt, 0, false, Payload::Fresh)
+}
+
+fn mbr_table_without_mark() -> Vec<u8> {
+    install(PartitionScheme::Mbr, 0, false, Payload::Fresh)
+}
+
+fn bad_fat_payload() -> Vec<u8> {
+    install(PartitionScheme::Gpt, 0, true, Payload::Noise)
+}
+
+fn missing_version() -> Vec<u8> {
+    install(PartitionScheme::Gpt, 0, true, Payload::WithoutVersion)
+}
+
+fn unreadable_version() -> Vec<u8> {
+    install(PartitionScheme::Gpt, 0, true, Payload::UnreadableVersion)
+}
+
+fn reserved_tail() -> Vec<u8> {
+    install(PartitionScheme::Gpt, 16, true, Payload::Fresh)
+}
+
+fn mark_with_malformed_table() -> Vec<u8> {
+    let mut disk = install(PartitionScheme::Gpt, 0, true, Payload::Fresh);
+    let array = noise(16_384);
+    write_at(&mut disk, 2 * SECTOR_SIZE, &array);
+    disk
+}
+
+/// Rudy's names and type GUIDs at offsets Rudy never chose. `table_is_rudys`
+/// checks names; `geometry_matches_rudy` checks offsets. This is the drive that
+/// separates them.
+fn foreign_geometry() -> Vec<u8> {
+    // Start from a *finished* install, so the only thing wrong with this drive
+    // is where partition 1 claims to begin. Everything else — the mark, the
+    // payload, the backup structures — is exactly what a real install leaves,
+    // which is what makes it an isolation of the geometry question.
+    let mut disk = install(PartitionScheme::Gpt, 0, true, Payload::Fresh);
+    let geometry =
+        DiskGeometry::compute(DISK_SECTORS, PartitionScheme::Gpt, 0).expect("fixture geometry");
+    let protective = GptBuilder::build_protective_mbr(&geometry).expect("fixture protective MBR");
+    let mut array = GptBuilder::build_partition_array(&geometry, &disk_guid());
+
+    // Move partition 1 off 2048 without touching its name or type GUID.
+    let moved_start = 4096u64;
+    array[32..40].copy_from_slice(&moved_start.to_le_bytes());
+
+    let mut sector0 = protective;
+    RudyDiskHeader::completion_mark().write_to_mbr(&mut sector0);
+    let protective = sector0;
+    write_at(&mut disk, 0, &protective);
+    let array_crc = compute_crc32(&array);
+    write_at(
+        &mut disk,
+        SECTOR_SIZE,
+        &GptBuilder::build_gpt_header(&geometry, &disk_guid(), true, array_crc),
+    );
+    write_at(&mut disk, 2 * SECTOR_SIZE, &array);
+    write_at(
+        &mut disk,
+        (geometry.total_sectors - 33) * SECTOR_SIZE,
+        &array,
+    );
+    write_at(
+        &mut disk,
+        (geometry.total_sectors - 1) * SECTOR_SIZE,
+        &GptBuilder::build_gpt_header(&geometry, &disk_guid(), false, array_crc),
+    );
+    disk
+}
+
+/// A correctly formed GPT that is simply not Rudy's: one data partition, no
+/// Rudy names anywhere.
+fn foreign_gpt() -> Vec<u8> {
+    let mut disk = blank();
+    let geometry =
+        DiskGeometry::compute(DISK_SECTORS, PartitionScheme::Gpt, 0).expect("fixture geometry");
+    let protective = GptBuilder::build_protective_mbr(&geometry).expect("fixture protective MBR");
+    let mut array = GptBuilder::build_partition_array(&geometry, &disk_guid());
+
+    // Overwrite both entries' UTF-16LE names with something else, leaving the
+    // geometry and the CRC-covered structure otherwise intact.
+    for entry in [0usize, 128] {
+        for (index, unit) in "DATA".encode_utf16().enumerate() {
+            let at = entry + 56 + index * 2;
+            array[at..at + 2].copy_from_slice(&unit.to_le_bytes());
+        }
+        array[entry + 56 + 8..entry + 128].fill(0);
+    }
+
+    write_at(&mut disk, 0, &protective);
+    let array_crc = compute_crc32(&array);
+    write_at(
+        &mut disk,
+        SECTOR_SIZE,
+        &GptBuilder::build_gpt_header(&geometry, &disk_guid(), true, array_crc),
+    );
+    write_at(&mut disk, 2 * SECTOR_SIZE, &array);
+    // Backup structures too: the fixture claims to be a *correctly formed*
+    // foreign disk, and one missing its backup header would be failing the
+    // verifier for a reason that has nothing to do with being foreign.
+    write_at(
+        &mut disk,
+        (geometry.total_sectors - 33) * SECTOR_SIZE,
+        &array,
+    );
+    write_at(
+        &mut disk,
+        (geometry.total_sectors - 1) * SECTOR_SIZE,
+        &GptBuilder::build_gpt_header(&geometry, &disk_guid(), false, array_crc),
+    );
+    disk
+}
+
+fn bad_gpt_header_crc() -> Vec<u8> {
+    let mut disk = install(PartitionScheme::Gpt, 0, true, Payload::Fresh);
+    // Flip a byte the header CRC covers but no other check reads: the reserved
+    // word at offset 0x0C, so only the CRC can notice.
+    disk[(SECTOR_SIZE as usize) + 0x0C] ^= 0xFF;
+    disk
+}
+
+fn truncated_after_sector_zero() -> Vec<u8> {
+    let full = install(PartitionScheme::Gpt, 0, true, Payload::Fresh);
+    full[..SECTOR_SIZE as usize].to_vec()
+}
+
+fn dirty_reserved_gap() -> Vec<u8> {
+    let mut disk = install(PartitionScheme::Gpt, 0, true, Payload::Fresh);
+    let geometry =
+        DiskGeometry::compute(DISK_SECTORS, PartitionScheme::Gpt, 0).expect("fixture geometry");
+    let filler = noise((geometry.bios_gap_sector_count * SECTOR_SIZE) as usize);
+    write_at(
+        &mut disk,
+        geometry.bios_gap_start_lba * SECTOR_SIZE,
+        &filler,
+    );
+    disk
+}

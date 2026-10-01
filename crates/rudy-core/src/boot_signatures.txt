@@ -1,0 +1,106 @@
+# Rudy boot-evidence signatures.
+#
+# THE SOURCE OF TRUTH for what a boot log means, shared by three consumers that
+# cannot check each other at compile time:
+#
+#   * rudy_core::boot_signatures  — compiles this file in with include_str!
+#   * scripts/boot_signatures.py  — reads it repository-relatively, no build
+#   * crates/rudy-boot            — the payload; produces the markers and the
+#                                   trace variables named below. It cannot
+#                                   depend on rudy-core (it is `no_std` and runs
+#                                   on the drive), so it compiles this file in
+#                                   through `include_str!` from its own tests —
+#                                   `markers.rs` and `trace.rs` check every name
+#                                   here against the constant they declare.
+#
+# The third consumer was `boot/grub/rudy.cfg` until 2026-09-19 (RB-09). It was
+# GRUB script and could import nothing at all, so a test parsed the file and
+# compared strings. The payload is Rust now and reads this table directly.
+#
+# Until AR-15 the Rust source *was* the source: a Python test parsed
+# `let patterns = [...]` out of diagnostics.rs. That caught ordinary drift and
+# pinned the shape of a Rust function against a Python regex. It also could not
+# see the divergence that actually existed — the two scanners matched the same
+# table with different case sensitivity, because matching policy was in neither
+# of the copies. It is a directive here now.
+#
+# FORMAT. One record per line, fields separated by a single TAB. Blank lines and
+# lines beginning with `#` are ignored. Values are literal: no escapes, no
+# wildcards, no regular expressions. A parser must reject anything it does not
+# recognise rather than skip it — a signature table that silently loses a row
+# scans for less than it says it does, and reports fewer failures, and gets
+# quieter rather than louder.
+#
+# RECORDS
+#   schema     <n>                 the format version; parsers require exactly 1
+#   match      <policy>            how every pattern below is compared
+#   marker     <name>  <text>      an affirmative line the payload prints
+#   fatal      <text>              a line that means the boot failed
+#   retryable  <text>              a line that means the *rig* failed, not the drive
+#   trace      <name>  <variable>  a boot-log variable the payload writes
+
+schema	1
+
+# `substring-casefold`: a pattern matches a line when the pattern appears
+# anywhere in it, compared with Unicode case folding on both sides.
+#
+# Case-insensitive deliberately, and this is the half that was undeclared.
+# Firmware and bootloaders are inconsistent about echoing case, and a marker
+# that matched in one run and not the next is worse than either answer. The
+# Python probe has always done this; the Rust analyzer was matching
+# case-sensitively, so the same log could be fatal to one and clean to the
+# other. Nothing compared them, because the old agreement test compared the
+# *strings* and the policy lived in neither table.
+match	substring-casefold
+
+# The line the payload prints once it has built the menu. The only affirmative
+# evidence that a drive booted as far as Rudy's own code rather than merely
+# producing pixels, which is all every VM run before the payload existed proved.
+marker	ready	rudy: menu ready
+
+# Printed before it starts looking. Reaching this and not `ready` means the
+# payload ran and image enumeration is where it stopped.
+marker	starting	rudy: menu starting
+
+# Every payload-side failure carries this prefix, so the fatal table below does
+# not have to track the menu's wording — the payload is free to say more without
+# an edit here. Reserved to the payload: a host-side error wearing it would
+# forge boot evidence, which `rudy-cli` has its own test against.
+marker	error_prefix	rudy: error:
+
+# Failures from the operating system the payload handed off to. A boot that
+# reaches Linux and then panics is a Rudy failure too: the point of the drive is
+# that the image it starts comes up.
+#
+# The payload's own failures are covered by `error_prefix` above, which appears
+# here as a fatal pattern in its own right. Two entries that used to sit here —
+# "MBR check failed" and "Disk partition layout check failed" — were a
+# third-party payload's wording and no Rudy drive can emit them.
+fatal	Kernel panic
+fatal	Call Trace:
+fatal	dracut-initqueue timeout
+fatal	INACCESSIBLE_BOOT_DEVICE
+fatal	CRITICAL_PROCESS_DIED
+fatal	Your PC needs to be repaired
+fatal	rudy: error:
+
+# Faults in the rig rather than in the drive. OVMF intermittently gives up on
+# the xHCI device before it has finished enumerating and reports the boot option
+# as Not Found; the same drive boots on the next attempt. Reporting that as a
+# boot failure would blame the product for the harness, so these are named
+# separately and the probe retries them.
+retryable	BdsDxe: failed to load
+retryable	BdsDxe: failed to start
+
+# The environment-block variables the payload writes its boot trace into.
+# `crates/rudy-boot/src/trace.rs` writes exactly these names into
+# `/rudy/bootlog.env`, and `rudy_core::boot_log` reads them back. A rename on
+# either side silently turns every recorded boot into an absent one — which reads
+# as "this drive has never booted", not as "the log moved".
+#
+# The names still begin `rudy_boot_` and `rudy_prev_` rather than being renamed
+# with the payload: they are on drives in the world, and a payload that stopped
+# writing the name the reader looks for would make every one of them read as
+# never booted.
+trace	current	rudy_boot_trace
+trace	previous	rudy_prev_trace

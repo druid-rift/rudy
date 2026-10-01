@@ -1,0 +1,23 @@
+[package]
+name = "rudy-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+fatfs = { workspace = true }
+gpt = { workspace = true }
+sha2 = { workspace = true }
+zstd = { workspace = true }
+uuid = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+proptest = "1.11.0"
+tempfile = "3.12"

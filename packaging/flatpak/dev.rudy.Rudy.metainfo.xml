@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AppStream metadata for the Flatpak bundle (flatpak 04).
+
+  Written to Flathub's schema even though flatpak 03 chose a locally-built
+  bundle, so that publishing later is a submission rather than a rewrite. Two
+  things a Flathub submission would still need and this does not have:
+  screenshots (none exist that are not test evidence) and a reachable homepage
+  at https://rudy.dev.
+-->
+<component type="desktop-application">
+  <id>dev.rudy.Rudy</id>
+
+  <name>Rudy</name>
+  <summary>Create multi-boot USB drives</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <description>
+    <p>
+      Rudy turns a USB drive into a multi-boot installer. Copy ISO files onto it
+      with your file manager and it offers them at boot — no reformatting, and
+      no re-writing the drive to add another image.
+    </p>
+    <p>
+      The drive is written through udisks2, so Rudy never runs as root: your
+      desktop asks you to authorise the one privileged step and nothing else.
+      System disks are refused outright, and a target whose safety cannot be
+      established is refused rather than assumed safe.
+    </p>
+    <p>UEFI only. Secure Boot is not supported.</p>
+  </description>
+
+  <launchable type="desktop-id">dev.rudy.Rudy.desktop</launchable>
+
+  <!-- The domain the app id is derived from. Confirmed as the project's
+       2026-09-02; Flathub verifies control of it with a token served from
+       /.well-known/org.flathub.VerifiedApps.txt, which a submission would
+       need and a local bundle does not. -->
+  <url type="homepage">https://rudy.dev</url>
+
+  <developer id="dev.rudy">
+    <name>The Rudy project</name>
+  </developer>
+
+  <categories>
+    <category>System</category>
+    <category>Utility</category>
+    <category>Filesystem</category>
+  </categories>
+
+  <provides>
+    <binary>rudy</binary>
+    <binary>rudy-gui</binary>
+  </provides>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="0.5.17" date="2026-10-01">
+      <description>
+        <p>A Linux image whose name has spaces, such as a browser's "ubuntu (1).iso", is copied under a name the boot menu can start, and Rudy tells you the name it used.</p>
+      </description>
+    </release>
+    <release version="0.5.16" date="2026-10-01">
+      <description>
+        <p>When a failed copy or unpack also cannot clean up after itself, the message says where it left its partial files in one consistent sentence.</p>
+      </description>
+    </release>
+    <release version="0.5.15" date="2026-10-01">
+      <description>
+        <p>rudy verify also checks that the boot partition is labelled RUDYEFI and carries nothing beyond its three files.</p>
+      </description>
+    </release>
+    <release version="0.5.14" date="2026-10-01">
+      <description>
+        <p>An image that carries its files in UDF but also has a readable EFI loader is now started instead of refused.</p>
+      </description>
+    </release>
+    <release version="0.5.13" date="2026-10-01">
+      <description>
+        <p>The boot menu's internals are simpler and better tested. No change you will see.</p>
+      </description>
+    </release>
+    <release version="0.5.12" date="2026-10-01">
+      <description>
+        <p>The boot menu no longer looks for a file it never used. No change you will see.</p>
+      </description>
+    </release>
+    <release version="0.5.11" date="2026-10-01">
+      <description>
+        <p>Images can be copied to a drive mounted under /media, where Debian and Ubuntu mount it. If the tool for the chosen filesystem is not installed, Rudy says which package to install before it touches the drive. Rudy no longer offers itself for opening image files, which it did not support.</p>
+      </description>
+    </release>
+    <release version="0.5.10" date="2026-10-01">
+      <description>
+        <p>Trying to close the window while Rudy writes to a drive now says why, on whichever tab is open. A fatal error is reported the way the command line reports one, with its causes.</p>
+      </description>
+    </release>
+    <release version="0.5.9" date="2026-10-01">
+      <description>
+        <p>A drive with 4096-byte sectors is refused before anything is written, since Rudy's layout would not boot from it. A boot payload too large for its partition is refused before a fresh install writes the table. An update no longer creates folders on the images partition. The completion mark is written only if every fact about the drive is unchanged since it was approved.</p>
+      </description>
+    </release>
+    <release version="0.5.8" date="2026-10-01">
+      <description>
+        <p>The command line's erase warning and its confirmation prompts are written to standard error, so redirecting the output no longer hides the warning while the command waits for an answer.</p>
+      </description>
+    </release>
+    <release version="0.5.7" date="2026-10-01">
+      <description>
+        <p>Every disk of a multi-device btrfs or ZFS system pool is now protected as a system disk, not only the one the mount table names. A system mount whose disks cannot be traced blocks every drive rather than none.</p>
+      </description>
+    </release>
+    <release version="0.5.6" date="2026-10-01">
+      <description>
+        <p>A drive that cannot be read is reported as unreadable rather than corrupt or not installed. A failed drive scan says so in the drive picker instead of showing "Scanning" indefinitely. The drive listing no longer asserts a sector size it never read.</p>
+      </description>
+    </release>
+    <release version="0.5.5" date="2026-10-01">
+      <description>
+        <p>An image's name can no longer stop the boot. A name with an emoji is shown with a placeholder. A Linux image whose path has a space or a quote is refused by name, with a request to rename it. Of two NTFS files differing only in case, the entry chosen is the file that boots. The menu says when the drive would not take its boot log.</p>
+      </description>
+    </release>
+    <release version="0.5.4" date="2026-10-01">
+      <description>
+        <p>A drive is formatted NTFS or exFAT only. FAT32 and ext4 are no longer offered, and a drive asked for either is refused before anything is written.</p>
+      </description>
+    </release>
+    <release version="0.5.3" date="2026-09-30">
+      <description>
+        <p>The app's image list names images the way the boot menu does, and names a Windows installer by its edition.</p>
+      </description>
+    </release>
+    <release version="0.5.2" date="2026-09-30">
+      <description>
+        <p>The boot menu names each image instead of listing its path: "Tuxos 4.0.0" rather than "linux/tuxos-4.0.0.iso", and a Windows installer by its edition, such as "Windows 11 Pro", rather than "Windows installer".</p>
+      </description>
+    </release>
+    <release version="0.5.1" date="2026-09-30">
+      <description>
+        <p>An image added to a drive now keeps its name if the drive is unplugged as soon as the copy finishes. Before, an image copied last could be left under a temporary name and be missing from the boot menu.</p>
+      </description>
+    </release>
+    <release version="0.5.0" date="2026-09-30">
+      <description>
+        <p>Adding an image can be cancelled while it copies. Cancelling removes whatever was partly copied, leaves the drive as it was, and skips the rest of the selection.</p>
+      </description>
+    </release>
+    <release version="0.4.0" date="2026-09-30">
+      <description>
+        <p>Windows Setup no longer stops before copying Windows from a Rudy drive. The drive's small boot partition is no longer marked as an EFI system partition, which Setup mistook for the computer's own. Drives made by earlier versions need to be set up again; "rudy verify" says which.</p>
+      </description>
+    </release>
+    <release version="0.3.1" date="2026-09-29">
+      <description>
+        <p>A Windows installer image can be added from any folder, not only Downloads. The app now has read-only access to your files so the image can be unpacked; it still writes only to the Rudy drive.</p>
+      </description>
+    </release>
+    <release version="0.3.0" date="2026-09-27">
+      <description>
+        <p>Adding a Windows installer image unpacks it onto the drive, where Windows Setup can find its install image, and the drive's list shows it as one Windows installer entry.</p>
+      </description>
+    </release>
+    <release version="0.2.0" date="2026-09-27">
+      <description>
+        <p>Windows installer images start Windows Setup, and a new drive has linux and windows folders that Rudy copies each image into.</p>
+      </description>
+    </release>
+    <release version="0.1.0" date="2026-09-02">
+      <description>
+        <p>First packaged release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

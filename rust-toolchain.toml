@@ -1,0 +1,9 @@
+# Pinned, because Rust 1.99.0 cannot link the boot payload: it lowers the
+# UCS-2 string loops in `uefi` to calls to `wcslen`, which nothing on the
+# x86_64-unknown-uefi target provides (`uefi` 0.41 does the same). CI took
+# 1.99 as stable on 2026-10-01 and every payload build failed from then on.
+# Move this when a toolchain or `uefi` release links again.
+[toolchain]
+channel = "1.98.1"
+targets = ["x86_64-unknown-uefi"]
+components = ["clippy", "rustfmt"]

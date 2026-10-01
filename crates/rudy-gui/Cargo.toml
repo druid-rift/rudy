@@ -1,0 +1,30 @@
+[package]
+name = "rudy-gui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "rudy-gui"
+path = "src/main.rs"
+
+[dependencies]
+rudy-core = { workspace = true }
+rudy-platform = { workspace = true }
+slint = { workspace = true }
+tracing = { workspace = true }
+rfd = { workspace = true }
+
+[build-dependencies]
+slint-build = "1.7"
+
+[dev-dependencies]
+# Slint's own headless backend. Already in the dependency graph as an optional
+# dependency of i-slint-backend-selector, so this pulls in no new crate.
+i-slint-backend-testing = "1.17.1"
+# To capture what this binary logs under its real default filter,
+# `rudy_platform::logging::default_filter`. Already a workspace dependency, used
+# by `rudy-platform`, so this pulls in no new crate.
+tracing-subscriber = { workspace = true }
