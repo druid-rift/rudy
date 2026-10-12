@@ -62,6 +62,27 @@ fn borrow<P: uefi::proto::ProtocolPointer + ?Sized>(
     .ok()
 }
 
+/// The UCS-2 `wcslen` that Rust 1.99's LLVM lowers `uefi`'s string-length loops
+/// to. Nothing on this target provides it, so the payload does (PRV-19).
+///
+/// The reads are volatile so this loop cannot itself be recognised as the idiom
+/// and compiled into a call to `wcslen` — which would be this function, forever.
+///
+/// # Safety
+///
+/// `s` points to a NUL-terminated run of `u16`, as every caller's C contract
+/// already requires.
+#[cfg(target_os = "uefi")]
+#[no_mangle]
+pub unsafe extern "C" fn wcslen(s: *const u16) -> usize {
+    let mut n = 0;
+    // SAFETY: the caller promises a terminator, so every read up to it is in bounds.
+    while unsafe { s.add(n).read_volatile() } != 0 {
+        n += 1;
+    }
+    n
+}
+
 #[cfg(target_os = "uefi")]
 mod payload {
     use crate::{blocks, bootlog, console, disc, drive, handoff, ui, winfs};

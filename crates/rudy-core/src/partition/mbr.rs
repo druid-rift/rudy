@@ -5,6 +5,9 @@ use crate::sector_math::{DiskGeometry, MBR_MAX_ADDRESSABLE_LBA};
 pub const MBR_PARTITION_TABLE_OFFSET: usize = 446;
 pub const MBR_SIGNATURE_OFFSET: usize = 510;
 pub const MBR_SIGNATURE_BYTES: [u8; 2] = [0x55, 0xAA];
+/// Partition 2's MBR type, EFI System. Windows Setup does not count it as a
+/// second ESP the way it counts a GPT one (WB-06), so MBR keeps it (ADR 0007).
+pub const MBR_PART2_TYPE: u8 = 0xEF;
 
 #[derive(Debug, Clone)]
 pub struct MbrBuilder;
@@ -71,7 +74,7 @@ impl MbrBuilder {
         mbr[p2_offset + 1] = 0xFE;
         mbr[p2_offset + 2] = 0xFF;
         mbr[p2_offset + 3] = 0xFF;
-        mbr[p2_offset + 4] = 0xEF; // EFI System Partition (ESP)
+        mbr[p2_offset + 4] = MBR_PART2_TYPE;
         mbr[p2_offset + 5] = 0xFE;
         mbr[p2_offset + 6] = 0xFF;
         mbr[p2_offset + 7] = 0xFF;

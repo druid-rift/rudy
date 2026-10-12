@@ -21,8 +21,9 @@ use std::path::{Path, PathBuf};
 
 /// Whether the drive carries Rudy's partition geometry.
 ///
-/// Geometry is what an unprivileged caller can read, and an install writes the
-/// table first — so `Differs` really is "not a Rudy drive", while `Matches` is
+/// Geometry and partition 2's label are what an unprivileged caller can read,
+/// and an install writes both before anything else (the table, then partition
+/// 2) — so `Differs` really is "not a Rudy drive", while `Matches` is
 /// an offer and never a claim the install *finished*. `RudyStatus` still owns
 /// that assertion.
 #[derive(Debug, Clone, PartialEq, Eq)]

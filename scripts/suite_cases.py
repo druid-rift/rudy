@@ -127,8 +127,10 @@ class SuiteCase:
 
         The app unpacks a Windows installer to the root rather than copying it
         (ADR 0006 §4). The suite stages the ISO in `windows/` instead, so it
-        boots the disc route and never the unpacked one: that route stops at the
-        firmware logo under this QEMU (`.scratch/windows-boot/issues/04`).
+        boots the disc route and never the unpacked one. The unpacked route
+        reaches Setup under this QEMU most of the time, but it sometimes stalls
+        in Windows' kernel after Rudy is gone (WB-04), and the settle check
+        passes a frame showing only the firmware logo.
         """
         return [
             ("windows" if key == "windows" else "linux", path)

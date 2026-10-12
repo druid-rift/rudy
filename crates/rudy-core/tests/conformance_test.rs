@@ -8,7 +8,7 @@ use fatfs::{FileSystem, FsOptions};
 use rudy_core::assets::RudyEfiFatBuilder;
 use rudy_core::conformance::{verify_contract, CheckOutcome, VerifyOptions};
 use rudy_core::models::{FilesystemType, PartitionScheme};
-use rudy_core::partition::GptBuilder;
+use rudy_core::partition::{GptBuilder, MbrBuilder};
 use rudy_core::sector_math::{DiskGeometry, SECTOR_SIZE};
 use rudy_core::signature::RudyDiskHeader;
 use uuid::Uuid;
@@ -137,6 +137,23 @@ fn disk_with_array(
     disk
 }
 
+/// The same contract under MBR: the table, the mark, partition 1's boot sector
+/// and partition 2's image.
+fn conforming_mbr_disk(part1_filesystem: FilesystemType) -> Cursor<Vec<u8>> {
+    let mut disk = Cursor::new(vec![0u8; DISK_BYTES as usize]);
+    let geom = DiskGeometry::compute(DISK_BYTES / SECTOR_SIZE, PartitionScheme::Mbr, 0).unwrap();
+    let mut mbr = MbrBuilder::build(&geom, part1_filesystem).unwrap();
+    RudyDiskHeader::completion_mark().write_to_mbr(&mut mbr);
+    disk.write_all(&mbr).unwrap();
+    disk.seek(SeekFrom::Start(geom.part1_byte_offset()))
+        .unwrap();
+    disk.write_all(&boot_sector_for(part1_filesystem)).unwrap();
+    disk.seek(SeekFrom::Start(geom.part2_byte_offset()))
+        .unwrap();
+    disk.write_all(&payload_image()).unwrap();
+    disk
+}
+
 fn outcome_of<'a>(
     report: &'a rudy_core::conformance::ConformanceReport,
     id: &str,
@@ -247,6 +264,52 @@ fn an_esp_typed_partition_two_fails_and_says_to_reinstall() {
         other => panic!("expected a failure, got {other:?}"),
     }
     assert_eq!(report.failures().len(), 1, "{:#?}", report.failures());
+}
+
+/// WB-06, 2026-10-01: under MBR, Windows Setup does not count a `0xEF`
+/// partition 2 as a second ESP. It copied Windows from such a stick under OVMF,
+/// as it did from the `0x0E` control. So `0xEF` is the MBR type, checked rather
+/// than skipped.
+#[test]
+fn an_mbr_drive_passes_the_partition_two_type_check() {
+    let mut disk = conforming_mbr_disk(FilesystemType::Exfat);
+
+    let report = verify(
+        &mut disk,
+        &VerifyOptions {
+            expect_scheme: Some(PartitionScheme::Mbr),
+            ..Default::default()
+        },
+    );
+
+    assert!(
+        outcome_of(&report, "layout.part2_type").is_pass(),
+        "{:?}",
+        outcome_of(&report, "layout.part2_type")
+    );
+    assert!(report.failures().is_empty(), "{:#?}", report.failures());
+}
+
+/// WB-08: Windows stamps a disk signature at `0x1B8` on an MBR disk whose
+/// signature is 0, as Rudy writes it. Those bytes are the OS's, not bootstrap,
+/// so a stick Windows has seen is still a conforming drive.
+#[test]
+fn a_disk_signature_windows_stamped_is_not_bootstrap() {
+    let mut disk = conforming_mbr_disk(FilesystemType::Exfat);
+    disk.get_mut()[0x1B8..0x1BC].copy_from_slice(&0x1AA4_AC40u32.to_le_bytes());
+    let options = VerifyOptions {
+        expect_scheme: Some(PartitionScheme::Mbr),
+        ..Default::default()
+    };
+
+    let report = verify(&mut disk, &options);
+    assert!(outcome_of(&report, "mbr.bootstrap_empty").is_pass());
+    assert!(report.failures().is_empty(), "{:#?}", report.failures());
+
+    // The rest of the region is still held to zero.
+    disk.get_mut()[0x1B7] = 0x90;
+    let report = verify(&mut disk, &options);
+    assert!(outcome_of(&report, "mbr.bootstrap_empty").is_fail());
 }
 
 #[test]

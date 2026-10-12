@@ -119,6 +119,15 @@ pub(crate) fn block_object_for_device_number(
     Ok(None)
 }
 
+/// A string property, or empty when absent or not a string.
+fn text(properties: &HashMap<String, OwnedValue>, key: &str) -> String {
+    properties
+        .get(key)
+        .and_then(|value| <&str>::try_from(value).ok())
+        .unwrap_or_default()
+        .to_string()
+}
+
 fn block_device_number(properties: &HashMap<String, OwnedValue>) -> Option<u64> {
     properties
         .get("DeviceNumber")
@@ -139,6 +148,9 @@ pub(crate) struct PartitionFacts {
     /// Byte offset from the start of the disk. `Partition.Offset`.
     pub(crate) offset: u64,
     pub(crate) size: u64,
+    /// The filesystem label, `Block.IdLabel`, empty if none. Served without a
+    /// prompt, and partition 2's is what tells Rudy's layout from Ventoy's.
+    pub(crate) label: String,
     /// Mount points udisks2 currently knows about, empty if not mounted.
     pub(crate) mount_points: Vec<String>,
 }
@@ -169,13 +181,6 @@ pub(crate) fn filesystem_identities(
         .get_managed_objects()
         .map_err(|error| dbus_error("cannot enumerate block devices", error))?;
 
-    let text = |block: &HashMap<String, OwnedValue>, key: &str| {
-        block
-            .get(key)
-            .and_then(|value| <&str>::try_from(value).ok())
-            .unwrap_or_default()
-            .to_string()
-    };
     let mut found = Vec::new();
     for interfaces in objects.values() {
         let Some(block) = interfaces.get(BLOCK_INTERFACE) else {
@@ -310,6 +315,7 @@ pub(crate) fn partitions_of(
             device_number,
             offset,
             size,
+            label: text(block, "IdLabel"),
             mount_points: interfaces
                 .get(FILESYSTEM_INTERFACE)
                 .map(|filesystem| strings_of(filesystem, "MountPoints"))
@@ -370,8 +376,9 @@ pub(crate) fn unmount_all_partitions(
 /// Whether the disk carries Rudy's partition geometry, read without a
 /// privileged open.
 ///
-/// `partitions_of` already carries `Partition.Offset` and `Size`, and udisks2
-/// serves both to an unprivileged caller — so this answers "does this drive look
+/// `partitions_of` already carries `Partition.Offset`, `Size` and the
+/// filesystem's `IdLabel`, and udisks2 serves all three to an unprivileged
+/// caller — so this answers "does this drive look
 /// like one Rudy wrote?" on the shipping path, where `probe_installed_status`
 /// cannot open the device at all. The rule itself is
 /// `rudy_core::sector_math::geometry_matches_rudy`; only the reading is here.
@@ -379,9 +386,9 @@ pub(crate) fn has_rudy_geometry(
     connection: &Connection,
     disk: &OwnedObjectPath,
 ) -> Result<bool, PlatformError> {
-    let geometry: Vec<(u64, u64)> = partitions_of(connection, disk)?
-        .iter()
-        .map(|partition| (partition.offset, partition.size))
+    let geometry: Vec<(u64, u64, String)> = partitions_of(connection, disk)?
+        .into_iter()
+        .map(|partition| (partition.offset, partition.size, partition.label))
         .collect();
     Ok(rudy_core::sector_math::geometry_matches_rudy(&geometry))
 }

@@ -138,6 +138,10 @@ const EXPECTED: &[Row] = &[
     // joined the verifier (`CONTEXT.md` §1's RUDYEFI label and "exactly three"
     // files): two more passes on every complete drive (18 to 20, 12 to 14), and
     // both fail on the foreign and broken-payload rows below.
+    //
+    // Corrected by WB-06, 2026-10-01. Windows Setup does not take an MBR `0xEF`
+    // partition 2 for a second ESP, so `layout.part2_type` checks it under MBR
+    // instead of skipping: one skip becomes a pass on the MBR row (14 to 15).
     Row {
         fixture: "gpt-complete",
         probe: "installed(GPT, version=1.0.99)",
@@ -147,7 +151,7 @@ const EXPECTED: &[Row] = &[
     Row {
         fixture: "mbr-complete",
         probe: "installed(MBR, version=1.0.99)",
-        verify: "pass(14 passed, 0 failed, 2 skipped)",
+        verify: "pass(15 passed, 0 failed, 1 skipped)",
         boot_log: "empty",
     },
     // The only fixture that has ever booted. `empty` above and `recorded` here
@@ -246,6 +250,16 @@ const EXPECTED: &[Row] = &[
         fixture: "foreign-gpt",
         probe: "not-installed",
         verify: "fail[mbr.rudy_identifier esp.fat_boot_signature esp.fat16 esp.label esp.bootx64 esp.boot_log esp.version esp.exactly_three_files]",
+        boot_log: "err(not-a-rudy-drive)",
+    },
+    // PRV-03. Somebody else's MBR drive in Ventoy's layout, which used to pass
+    // the MBR table rule on type bytes and geometry alone, so the probe called
+    // it an interrupted Rudy install and offered Update. Under MBR the rule now
+    // also needs partition 2's label `RUDYEFI`, MBR's stand-in for GPT's names.
+    Row {
+        fixture: "foreign-mbr",
+        probe: "not-installed",
+        verify: "fail[mbr.rudy_identifier esp.label]",
         boot_log: "err(not-a-rudy-drive)",
     },
     // A CRC only the verifier checks. The probe and the boot-log reader read

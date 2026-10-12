@@ -151,6 +151,13 @@ const EXPECTED: &[Row] = &[
         fixture: "foreign-gpt",
         gate: "refused(the update stopped / Cannot perform non-destructive update: no Rudy partition table on target disk)",
     },
+    // PRV-03. The MBR twin of the row above: Ventoy's layout carries Rudy's type
+    // bytes and geometry, so the gate used to accept it and would have flashed
+    // Rudy over `VTOYEFI` and stamped Rudy's mark. The label is now decisive.
+    Row {
+        fixture: "foreign-mbr",
+        gate: "refused(the update stopped / Cannot perform non-destructive update: no Rudy partition table on target disk)",
+    },
     // A header CRC the gate never reads. It reads the array's contents, not the
     // header's checksum, so this drive updates — correctly: the payload it is
     // about to replace is located from entries that are intact.

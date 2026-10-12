@@ -2053,6 +2053,7 @@ mod platform {
                 device_number,
                 offset,
                 size,
+                label: String::new(),
                 mount_points: Vec::new(),
             }
         }

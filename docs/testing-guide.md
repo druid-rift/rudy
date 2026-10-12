@@ -336,8 +336,9 @@ both distributions ship a `loopback.cfg`, so a stock ISO takes that branch inste
 two rows rest on documentation, and closing them needs an image built to lack the file.
 **Windows is checked by hand, not by the suite.** `windows-ntfs-gpt` covers ADR 0006's disc
 route as far as Setup's language page, where an ISO alone stops. The route the app uses, an
-installer unpacked onto partition 1 and booted through `winfs`, does not start under the
-suite's QEMU. It installs Windows on real hardware and, booted through the disc route with
+installer unpacked onto partition 1 and booted through `winfs`, reaches Setup under the
+suite's QEMU most of the time, and sometimes stalls in Windows' kernel after Rudy is gone
+(WB-04, ADR 0006 §4). No suite case stages it yet. It installs Windows on real hardware and, booted through the disc route with
 the unpacked tree, under a hand-built OVMF rig (2026-09-30, ADR 0007). Neither run is part
 of the matrix, and Windows is not a §0 promise.
 

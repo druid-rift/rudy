@@ -15,6 +15,7 @@ use std::io::{Read, Seek};
 use serde::{Deserialize, Serialize};
 
 use crate::models::{FilesystemType, PartitionScheme};
+use crate::partition::mbr::{MBR_PART2_TYPE, MBR_PARTITION_TABLE_OFFSET};
 use crate::partition::{GptBuilder, InstalledLayout};
 use crate::readback::{read_payload_text, DriveEvidence, ReadAt, SeekReader, GPT_ARRAY_BYTES};
 use crate::sector_math::{PART1_START_LBA, PART2_SIZE_SECTORS, SECTOR_SIZE};
@@ -27,6 +28,10 @@ const GPT_GAP_END_LBA: u64 = PART1_START_LBA - 1;
 
 /// Bytes of sector 0 that belong to the bootstrap, before the partition table.
 const MBR_BOOTSTRAP_LEN: usize = 446;
+/// The disk signature and its two reserved bytes, `0x1B8..0x1BE`. They belong
+/// to the OS, not to the bootstrap: Rudy writes 0 and Windows stamps its own
+/// signature on any MBR disk that has none (WB-08).
+const MBR_DISK_SIGNATURE: core::ops::Range<usize> = 0x1B8..MBR_BOOTSTRAP_LEN;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
@@ -167,7 +172,8 @@ pub const MBR_RUDY_IDENTIFIER: CheckSpec = CheckSpec {
 };
 pub const MBR_BOOTSTRAP_EMPTY: CheckSpec = CheckSpec {
     id: "mbr.bootstrap_empty",
-    requirement: "The bootstrap region either side of the identifier is zero",
+    requirement:
+        "The bootstrap region either side of the identifier, short of the disk signature, is zero",
     spec_ref: "ADR 0004 / CONTEXT.md §1",
 };
 pub const MBR_PROTECTIVE_ENTRY: CheckSpec = CheckSpec {
@@ -225,7 +231,7 @@ pub const LAYOUT_PARTITIONS_DISJOINT: CheckSpec = CheckSpec {
 /// such a drive is wrong, so the failure has to carry the remedy itself.
 pub const LAYOUT_PART2_TYPE: CheckSpec = CheckSpec {
     id: "layout.part2_type",
-    requirement: "Under GPT, partition 2 is typed Basic Data, not EFI System",
+    requirement: "Partition 2 is typed Basic Data under GPT, 0xEF under MBR",
     spec_ref: "CONTEXT.md §1",
 };
 pub const LAYOUT_RESERVED_GAP_EMPTY: CheckSpec = CheckSpec {
@@ -499,9 +505,11 @@ fn check_sector_zero(
     // UEFI never executes the bootstrap, so every byte of it below the
     // identifier stays zero. A non-zero byte here means something other than
     // Rudy wrote sector 0, or that a BIOS chain was introduced without the ADR.
+    // The disk signature is not bootstrap, and Windows may have written it.
     let bootstrap_dirty = sector0[..RUDY_MAGIC_OFFSET]
         .iter()
-        .chain(sector0[GRUB_RESERVED_END..MBR_BOOTSTRAP_LEN].iter())
+        // The signature runs up to the partition table, so nothing follows it.
+        .chain(sector0[GRUB_RESERVED_END..MBR_DISK_SIGNATURE.start].iter())
         .filter(|&&byte| byte != 0)
         .count();
     report
@@ -710,9 +718,16 @@ fn check_part2_type(
     scheme: PartitionScheme,
 ) {
     let outcome = match (scheme, evidence.gpt_array()) {
-        (PartitionScheme::Mbr, _) => CheckOutcome::skip(
-            "MBR keeps type 0xEF for partition 2 until it is tried with Windows Setup",
-        ),
+        // Under MBR, `0xEF` is right: Windows Setup does not take it for a
+        // second ESP (WB-06), and it is how a Rudy MBR table is recognised.
+        (PartitionScheme::Mbr, _) => {
+            let recorded = evidence.sector0()[MBR_PARTITION_TABLE_OFFSET + 16 + 4];
+            if recorded == MBR_PART2_TYPE {
+                CheckOutcome::Pass
+            } else {
+                CheckOutcome::fail(format!("typed 0x{recorded:02X}, expected 0xEF"))
+            }
+        }
         (PartitionScheme::Gpt, Some(Ok(array))) => {
             let recorded = &array[128..144];
             if recorded == GptBuilder::basic_data_guid().to_bytes_le() {

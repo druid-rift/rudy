@@ -45,7 +45,11 @@ const MBR_TABLE_OFFSET: usize = 446;
 /// GPT protective partition type.
 const GPT_PROTECTIVE_TYPE: u8 = 0xEE;
 /// MBR partition type for an EFI System Partition.
-const MBR_ESP_TYPE: u8 = 0xEF;
+const MBR_ESP_TYPE: u8 = super::mbr::MBR_PART2_TYPE;
+/// The FAT16 extended BPB's volume label, in partition 2's first sector.
+const FAT16_LABEL: core::ops::Range<usize> = 43..54;
+/// Partition 2's FAT label as the payload image carries it, space-padded.
+const PART2_LABEL: &[u8; 11] = b"RUDYEFI    ";
 /// Offset of the 72-byte UTF-16LE name field inside a 128-byte GPT entry.
 const GPT_ENTRY_NAME_OFFSET: usize = 56;
 /// Length of that name field.
@@ -271,20 +275,32 @@ impl InstalledLayout {
     /// layout is safe to write into: a foreign drive that happens to carry a
     /// 32 MiB second partition satisfies that and must still probe as
     /// `NotInstalled`.
-    pub fn table_is_rudys(scheme: PartitionScheme, sector0: &[u8; 512], gpt_array: &[u8]) -> bool {
+    ///
+    /// `part2_boot` is partition 2's first sector under MBR, or empty when it
+    /// was not read; GPT ignores it.
+    pub fn table_is_rudys(
+        scheme: PartitionScheme,
+        sector0: &[u8; 512],
+        gpt_array: &[u8],
+        part2_boot: &[u8],
+    ) -> bool {
         match scheme {
             PartitionScheme::Gpt => {
                 gpt_entry_name(gpt_array, 0).as_deref() == Some("RUDY")
                     && gpt_entry_name(gpt_array, 1).as_deref() == Some("RUDYEFI")
             }
-            // MBR carries no names, so the only provenance available is the pair
-            // of type bytes `MbrBuilder` writes: a data partition 1 and an ESP
-            // partition 2. Combined with `validated`'s exact 32 MiB partition 2
-            // that is the whole of the evidence an MBR drive can offer.
+            // MBR carries no names. The type bytes `MbrBuilder` writes and
+            // `validated`'s exact 32 MiB partition 2 are shared with Ventoy's
+            // layout, so partition 2's FAT label stands in for GPT's names
+            // (PRV-03). The install flashes partition 2 straight after the table,
+            // so only an install cut off between those two reads as not Rudy's,
+            // and a fresh install of that drive loses nothing.
             PartitionScheme::Mbr => {
                 let part1_type = sector0[MBR_TABLE_OFFSET + 4];
                 let part2_type = sector0[MBR_TABLE_OFFSET + 16 + 4];
-                matches!(part1_type, 0x07 | 0x0C | 0x83) && part2_type == MBR_ESP_TYPE
+                matches!(part1_type, 0x07 | 0x0C | 0x83)
+                    && part2_type == MBR_ESP_TYPE
+                    && part2_boot.get(FAT16_LABEL) == Some(PART2_LABEL.as_slice())
             }
         }
     }

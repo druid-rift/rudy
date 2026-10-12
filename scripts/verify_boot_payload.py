@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_BUNDLE = REPO_ROOT / "assets/boot-assets/2.4.12"
+DEFAULT_BUNDLE = REPO_ROOT / "assets/boot-assets/2.4.17"
 
 EXPECTED_UNCOMPRESSED_BYTES = 33554432
 

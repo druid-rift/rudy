@@ -179,6 +179,9 @@ pub struct DriveEvidence {
     completion_mark: bool,
     gpt_array: Option<Result<Box<[u8; GPT_ARRAY_BYTES]>, ReadError>>,
     layout: Result<InstalledLayout, LayoutUnavailable>,
+    /// Partition 2's first sector, read only under MBR once the layout parses:
+    /// it carries the label that stands in for GPT's names (PRV-03).
+    part2_boot: Option<Result<[u8; SECTOR_BYTES], ReadError>>,
     payload: Option<Result<Vec<u8>, PayloadUnavailable>>,
 }
 
@@ -221,12 +224,25 @@ impl DriveEvidence {
             (PartitionScheme::Gpt, None) => unreachable!("a GPT scheme always attempts the array"),
         };
 
+        let part2_boot = match (scheme, &layout) {
+            (PartitionScheme::Mbr, Ok(layout)) => {
+                let mut sector = [0u8; SECTOR_BYTES];
+                Some(
+                    reader
+                        .read_exact_at(layout.part2_byte_offset(), &mut sector)
+                        .map(|()| sector),
+                )
+            }
+            _ => None,
+        };
+
         Ok(Self {
             sector0,
             scheme,
             completion_mark,
             gpt_array,
             layout,
+            part2_boot,
             payload: None,
         })
     }
@@ -270,18 +286,38 @@ impl DriveEvidence {
         }
     }
 
+    /// Why partition 2's first sector would not read under MBR, if it did not.
+    /// `table_is_rudys` treats that as no label, so a consumer that must not
+    /// draw a conclusion from missing evidence asks here first.
+    pub fn part2_boot_error(&self) -> Option<&ReadError> {
+        match &self.part2_boot {
+            Some(Err(error)) => Some(error),
+            _ => None,
+        }
+    }
+
     pub fn layout(&self) -> Result<&InstalledLayout, &LayoutUnavailable> {
         self.layout.as_ref()
     }
 
-    /// Whether the partition table carries Rudy's names.
+    /// Whether the partition table carries Rudy's names: under MBR, partition
+    /// 2's label in their place. A partition 2 that would not read is no label.
     ///
     /// Names only, and that is the whole point: anything can be made to carry
     /// them, so this identifies a drive and never authorizes a write. What may
     /// be written where is [`InstalledLayout::writable_part2_range`], which
     /// needs the target's real capacity and lives on the mutation path.
     pub fn table_is_rudys(&self) -> bool {
-        InstalledLayout::table_is_rudys(self.scheme, &self.sector0, self.array_or_empty())
+        let part2_boot = match &self.part2_boot {
+            Some(Ok(sector)) => sector.as_slice(),
+            _ => &[],
+        };
+        InstalledLayout::table_is_rudys(
+            self.scheme,
+            &self.sector0,
+            self.array_or_empty(),
+            part2_boot,
+        )
     }
 
     /// Reads partition 2 once, and hands its filesystem to `body`.

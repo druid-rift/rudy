@@ -454,6 +454,11 @@ pub fn matrix() -> Vec<FixtureSpec> {
             build: foreign_gpt,
         },
         FixtureSpec {
+            name: "foreign-mbr",
+            what: "somebody else's MBR drive in Ventoy's layout: Rudy's type bytes and geometry, a 32 MiB partition 2 labelled VTOYEFI, no mark",
+            build: foreign_mbr,
+        },
+        FixtureSpec {
             name: "bad-gpt-header-crc",
             what: "a finished GPT install whose primary header CRC no longer matches",
             build: bad_gpt_header_crc,
@@ -545,6 +550,19 @@ fn mark_with_malformed_table() -> Vec<u8> {
     let mut disk = install(PartitionScheme::Gpt, 0, true, Payload::Fresh);
     let array = noise(16_384);
     write_at(&mut disk, 2 * SECTOR_SIZE, &array);
+    disk
+}
+
+/// PRV-03. Ventoy's documented MBR layout matches every byte Rudy's MBR table
+/// rule used to read: partition 1 at LBA 2048 typed `0x07`, partition 2 a
+/// 32 MiB FAT16 typed `0xEF`. Its partition 2 is labelled `VTOYEFI`, and that
+/// label is the only thing this fixture changes on an unmarked Rudy MBR install,
+/// so it isolates the one piece of evidence the rule now also reads.
+fn foreign_mbr() -> Vec<u8> {
+    let mut disk = install(PartitionScheme::Mbr, 0, false, Payload::Fresh);
+    let geometry =
+        DiskGeometry::compute(DISK_SECTORS, PartitionScheme::Mbr, 0).expect("fixture geometry");
+    write_at(&mut disk, geometry.part2_byte_offset() + 43, b"VTOYEFI    ");
     disk
 }
 

@@ -85,12 +85,14 @@ independently derived.
 ### Prerequisites
 
 - **Rust 1.92 or newer** (stable, with Cargo). The floor is measured, not assumed: the
-  workspace builds and its tests pass on rustc 1.92.0 and 1.98.1 with the locked
+  workspace builds and its tests pass on rustc 1.92.0, 1.98.1 and 1.99.0 with the locked
   dependencies, and rustc 1.91.0 is refused because Slint 1.17.1 requires 1.92. The
   workspace declares `rust-version = "1.92"`, so cargo enforces it (AR-19).
 - **Linux Packages**: `libudev-dev`, `libfontconfig1-dev`, `udisks2`
-- **Formatting tools**: `ntfs-3g` (for `mkfs.ntfs`, needed by the default NTFS layout) and
-  `exfatprogs` (for an exFAT drive), on the host, because udisks2 runs them. Rudy asks
+- **Formatting tools**: `mkfs.ntfs` (needed by the default NTFS layout) and `exfatprogs`
+  (for an exFAT drive), on the host, because udisks2 runs them. `mkfs.ntfs` comes with
+  `ntfs-3g` on Debian-family hosts and with the separate `ntfsprogs` package where the
+  distribution has split it out (Arch-family, 2026). Rudy asks
   udisks2 before touching the drive and refuses by name if the one it needs is missing.
 
 ### Before your first commit

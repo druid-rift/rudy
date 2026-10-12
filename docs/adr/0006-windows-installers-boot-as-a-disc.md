@@ -160,11 +160,26 @@ device was left behind. The tree Rudy's code unpacked, booted through the disc r
 it, took Setup past Install now to edition selection, listing all four editions it read
 from `install.wim`.
 
-**What the suite's QEMU does not show:** the unpacked route itself. Booted through `winfs`
-there, today's payload and the 2026-09-26 one both stop at the firmware logo, with one core
-spinning and memory flat for eight minutes. The 2026-09-26 session's own rig reached Setup
-by this route, so the difference is in the rig and is not understood yet
-(`.scratch/windows-boot/issues/04`). The laptop is the evidence that counts.
+**Under the suite's QEMU the unpacked route reaches Setup most of the time, and the stall it
+sometimes shows is not Rudy's** (WB-04, 2026-10-01). Ten boots of an unpacked Server 2022
+tree, in the suite's own argv (q35, KVM, 4 GiB, `usb-storage` on `nec-usb-xhci`, OVMF 4m),
+with tables and payloads from 2.2.0 to 2.4.13. Seven reached Setup's language page, the
+2.2.0 payload among them. Two stopped at the firmware logo with one core at 99%; both had
+a second VM running on the host. One sequential run showed a black screen at 200 s. Payload
+version and partition 2's type made no difference: 2.2.0, 2.3.0 and 2.3.2 were built from
+the same `winfs` and filesystem readers, and 2.2.0 both stalled and passed.
+
+Where the stall is, measured with a diagnostic payload that logged every `winfs` call to
+serial: in every boot, stalled or not, Rudy's filesystem served **one open and one read**,
+firmware's `LoadImage` of `\EFI\BOOT\BOOTX64.EFI`. `bootmgfw` never calls it again: it
+reads `BCD` and `boot.wim` with its own NTFS driver over firmware's `BlockIO`. In a stalled
+VM, QEMU read 434 MB off the image in the 12 s after the handoff, as much as a VM that
+reached Setup, which is all of `boot.wim` (415 MB). Then it read nothing for seven
+minutes. So the stall comes after `boot.wim` is in memory, at the stage where Windows keeps
+the firmware logo up while its kernel starts, past `ExitBootServices`. By then Rudy's
+payload no longer exists. It is not a slow read (the crawl hypothesis is refuted) and not
+a Rudy defect. It is how this QEMU's emulated xHCI and USB storage meet WinPE's kernel,
+and it is more likely under host load. The laptop remains the evidence that counts.
 
 ## What this does not claim
 

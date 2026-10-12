@@ -67,15 +67,18 @@ fn acquiring_identity_never_reads_the_payload() {
     );
 }
 
-/// An MBR drive has no entry array to read, so identity is one read.
+/// An MBR drive has no entry array and no names. Identity is sector 0 and
+/// partition 2's first sector, whose FAT label stands in for GPT's names
+/// (PRV-03): two sectors, and never the payload.
 #[test]
-fn an_mbr_drive_acquires_identity_from_sector_zero_alone() {
+fn an_mbr_drive_acquires_identity_from_sector_zero_and_partition_two_label() {
     let drive = fixture("mbr-complete");
     let mut reader = drive.counted();
 
     let evidence = DriveEvidence::acquire(&mut reader).expect("a finished MBR install acquires");
-    assert!(evidence.layout().is_ok());
-    assert_eq!(reader.reads, vec![(0, SECTOR_BYTES)]);
+    let part2 = evidence.layout().expect("a layout").part2_byte_offset();
+    assert!(evidence.table_is_rudys());
+    assert_eq!(reader.reads, vec![(0, SECTOR_BYTES), (part2, SECTOR_BYTES)]);
 }
 
 /// The verifier reads the payload once, though two separate groups of clauses

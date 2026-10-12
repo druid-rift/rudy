@@ -80,10 +80,10 @@ tickets are tracked Markdown under `.scratch/<feature>/` and are linked by path.
   installed Windows and reached its first-run settings page, with no errors
   (`.scratch/windows-boot/issues/03`).
 
-  **Under the suite's own QEMU the unpacked route now stops before Setup**: with the firmware
-  logo up and one core spinning, for today's payload and the 2026-09-26 one alike. That
-  session's own VM rig reached Setup, so this is a rig difference not yet understood
-  (`.scratch/windows-boot/issues/04`), and the laptop is the evidence that counts.
+  **Under the suite's own QEMU the unpacked route reaches Setup most of the time** (7 of 10
+  boots, WB-04). When it stalls, it stalls at the firmware logo after Windows' own loader
+  has read all of `boot.wim` and Rudy is gone, so the stall is the VM's and not Rudy's
+  (ADR 0006 §4). The laptop is the evidence that counts.
 
   **`wimboot` was the route assumed until 2026-08-28, and it is abandoned.** Its cpio/`initrd`
   interface is its **BIOS** half; its UEFI half reads the root of the firmware-visible volume
@@ -293,9 +293,10 @@ tickets are tracked Markdown under `.scratch/<feature>/` and are linked by path.
     UEFI:NTFS partition Basic Data. A Linux desktop now lists `RUDYEFI` as a volume:
     udisks2 hides an ESP but ignores the hidden bit, and hiding it would take a udev rule
     on the host, which Rudy does not install (ADR 0003). Under MBR partition 2 keeps
-    `0xEF` until it is tried with Windows Setup (`.scratch/windows-boot/issues/06`).
-    `rudy verify`'s `layout.part2_type` fails a GPT drive typed the old way and says to
-    reinstall it; Update does not retype. *Changed 2026-09-30, app 0.4.0 (ADR 0007): every
+    `0xEF`: Windows Setup does not count it as a second ESP, and copied Windows from such
+    a stick under OVMF as it did from a `0x0E` control (WB-06, 2026-10-01).
+    `rudy verify`'s `layout.part2_type` checks both, fails a GPT drive typed the old way and
+    says to reinstall it; Update does not retype. *Changed 2026-09-30, app 0.4.0 (ADR 0007): every
     earlier drive typed partition 2 EFI System.*
   - Contents, and there are exactly three: `/EFI/BOOT/BOOTX64.EFI` (the whole payload —
     the menu is compiled into it, so there is nothing beside it to fall out of step with),
@@ -355,12 +356,27 @@ tickets are tracked Markdown under `.scratch/<feature>/` and are linked by path.
        filesystem. The mark on an image therefore means *table and payload written*, not
        *this drive is finished*, and `verify`'s `skip_part1_filesystem` is what says so on
        the reading side.
+
+  The rest of sector 0 ahead of the table is held to zero, with one exception: the disk
+  signature at `0x1B8..0x1BE`. Rudy writes 0 there, and Windows stamps its own signature
+  on any MBR disk that has none, as it did to an MBR stick that booted Setup (WB-08).
+  Those bytes belong to the OS, not to a bootstrap. `verify` accepts any value there,
+  and an update keeps whatever is there.
 - **Rudy partition table**: The table alone, judged without the completion mark — the GPT
-  partition names `RUDY` and `RUDYEFI`, or under MBR a data partition 1 and an `0xEF` ESP
-  partition 2, in either case with partition 2 exactly 65,536 sectors. Written **first**,
-  so it is the evidence that separates an install cut short (table, no mark → `Corrupt`)
-  from a drive Rudy never touched (no table → `NotInstalled`). Identification only, on the
-  same footing as the identifier: nothing validates it at boot.
+  partition names `RUDY` and `RUDYEFI`, or under MBR a data partition 1, an `0xEF`
+  partition 2, and partition 2's FAT volume label `RUDYEFI`. In either case partition 2 is
+  exactly 65,536 sectors. Written **first**, so it is the evidence that separates an
+  install cut short (table, no mark → `Corrupt`) from a drive Rudy never touched (no table
+  → `NotInstalled`). Identification only, on the same footing as the identifier: nothing
+  validates it at boot.
+
+  *Amended 2026-10-01 (PRV-03), maintainer decision.* MBR has no partition names, and its
+  type bytes and geometry alone are also Ventoy's layout. So a Ventoy stick read as an
+  interrupted Rudy install, and Update would have flashed Rudy over it. The label stands in
+  for the names. The install flashes partition 2 straight after the table, so an MBR
+  install cut off between those two reads `NotInstalled`, and a fresh install of it loses
+  nothing. One cut off later still reads `Corrupt` and Update repairs it. A partition 2
+  that will not read reads `Unreadable`, never `NotInstalled`.
 
 ---
 
@@ -477,7 +493,10 @@ See ADR 0003. ADR 0001 (pkexec + elevated worker) is superseded.
   is the shipped client's ordinary case, and it never opened anything. **A probe that
   cannot open the device now asks udisks2 for the partition geometry**, which udisks2
   serves without a prompt. The rule is `geometry_matches_rudy`, the one the ISO manager
-  already offers on. There are three outcomes:
+  already offers on: partition 1 at 1 MiB, a 32 MiB partition 2, and partition 2's
+  filesystem label `RUDYEFI`, which udisks2 also serves without a prompt. *The label was
+  added 2026-10-01 (PRV-20): Ventoy's layout has Rudy's geometry under both schemes.*
+  There are three outcomes:
   - **A match is `LayoutOnly`** ("Rudy (unverified)"). It is **never** `Installed`, because
     the completion mark is not visible to that caller, so the drive may be finished or
     interrupted. It carries `probed: false`, offers Update, and adds no warning panel.

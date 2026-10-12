@@ -21,15 +21,20 @@ pub const PART2_SIZE_SECTORS: u64 = 65536; // Exactly 32 MiB (65,536 * 512 = 33,
 /// install matches too. Use this to decide what to **offer**; `RudyStatus` is
 /// the only thing that may say a drive *is* installed.
 ///
-/// It exists because udisks2 reports partition offsets and sizes to an
-/// unprivileged caller while sector 0 needs an authorized open, so this is the
-/// only structural evidence the shipping path can see (flatpak 13).
-pub fn geometry_matches_rudy(partitions: &[(u64, u64)]) -> bool {
-    let [(part1_offset, _), (_, part2_size)] = partitions else {
+/// It exists because udisks2 reports partition offsets, sizes and filesystem
+/// labels to an unprivileged caller while sector 0 needs an authorized open, so
+/// this is the only structural evidence the shipping path can see (flatpak 13).
+/// Each partition is `(byte offset, byte size, label)`. Partition 2's label
+/// `RUDYEFI` is part of the match: Ventoy's layout has Rudy's geometry under
+/// both schemes, and the label is what the authorized gate also reads (PRV-03).
+pub fn geometry_matches_rudy(partitions: &[(u64, u64, String)]) -> bool {
+    let [(part1_offset, _, _), (_, part2_size, part2_label)] = partitions else {
         return false;
     };
     *part1_offset == PART1_START_LBA * SECTOR_SIZE
         && *part2_size == PART2_SIZE_SECTORS * SECTOR_SIZE
+        // Ventoy shares the geometry; the label does not (PRV-20).
+        && part2_label == "RUDYEFI"
 }
 
 /// Sectors the secondary GPT occupies at the tail of the disk: a 32-sector
@@ -219,11 +224,15 @@ mod geometry_tests {
     const P1: u64 = PART1_START_LBA * SECTOR_SIZE;
     const P2: u64 = PART2_SIZE_SECTORS * SECTOR_SIZE;
 
+    fn rudyefi() -> String {
+        "RUDYEFI".to_string()
+    }
+
     #[test]
     fn rudys_own_geometry_matches() {
         assert!(geometry_matches_rudy(&[
-            (P1, 8_000_000_000),
-            (P1 + 8_000_000_000, P2)
+            (P1, 8_000_000_000, rudyefi()),
+            (P1 + 8_000_000_000, P2, rudyefi())
         ]));
     }
 
@@ -231,16 +240,16 @@ mod geometry_tests {
     fn a_drive_with_one_partition_does_not_match() {
         // The commonest foreign drive there is: a single-partition USB stick.
         // Before flatpak 13 the ISO manager would have opened on it.
-        assert!(!geometry_matches_rudy(&[(P1, 8_000_000_000)]));
+        assert!(!geometry_matches_rudy(&[(P1, 8_000_000_000, rudyefi())]));
         assert!(!geometry_matches_rudy(&[]));
     }
 
     #[test]
     fn a_third_partition_does_not_match() {
         assert!(!geometry_matches_rudy(&[
-            (P1, 1),
-            (P1 + 1, P2),
-            (P1 + 2, 512)
+            (P1, 1, rudyefi()),
+            (P1 + 1, P2, rudyefi()),
+            (P1 + 2, 512, rudyefi())
         ]));
     }
 
@@ -248,16 +257,32 @@ mod geometry_tests {
     fn the_esp_size_is_what_distinguishes_it() {
         // Same partition count and same start, one sector short on partition 2.
         assert!(!geometry_matches_rudy(&[
-            (P1, 8_000_000_000),
-            (P1 + 8_000_000_000, P2 - 512)
+            (P1, 8_000_000_000, rudyefi()),
+            (P1 + 8_000_000_000, P2 - 512, rudyefi())
         ]));
     }
 
     #[test]
     fn a_first_partition_at_the_wrong_offset_does_not_match() {
         assert!(!geometry_matches_rudy(&[
-            (1024 * 512, 8_000_000_000),
-            (P1, P2)
+            (1024 * 512, 8_000_000_000, rudyefi()),
+            (P1, P2, rudyefi())
         ]));
+    }
+
+    /// PRV-20. Ventoy's layout matches Rudy's geometry under GPT and MBR alike;
+    /// only partition 2's label tells them apart, and udisks2 serves it without
+    /// a prompt.
+    #[test]
+    fn a_partition_two_labelled_anything_but_rudyefi_does_not_match() {
+        for label in ["VTOYEFI", "", "rudyefi"] {
+            assert!(
+                !geometry_matches_rudy(&[
+                    (P1, 8_000_000_000, String::new()),
+                    (P1 + 8_000_000_000, P2, label.to_string())
+                ]),
+                "{label:?}"
+            );
+        }
     }
 }

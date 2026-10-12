@@ -108,12 +108,27 @@ fn a_gpt_table_without_the_completion_mark_is_corrupt_not_installed() {
     }
 }
 
+/// Under MBR, partition 2's label is part of the table's provenance (PRV-03),
+/// and the install flashes partition 2 straight after writing the table. So an
+/// install interrupted after the flash is `Corrupt` and Update repairs it, and
+/// one cut off between the table and the flash reads `NotInstalled`: the
+/// maintainer's accepted cost, since a fresh install of that drive loses nothing.
 #[test]
 fn an_mbr_table_without_the_completion_mark_is_corrupt_not_installed() {
-    let geometry = DiskGeometry::compute(1_000_000, PartitionScheme::Mbr, 0).unwrap();
-    let sector0 = MbrBuilder::build(&geometry, FilesystemType::Ntfs).unwrap();
+    let geometry = DiskGeometry::compute(MIN_DISK_SECTORS, PartitionScheme::Mbr, 0).unwrap();
+    let mut disk = vec![0u8; (MIN_DISK_SECTORS * SECTOR_SIZE) as usize];
+    disk[..512].copy_from_slice(&MbrBuilder::build(&geometry, FilesystemType::Ntfs).unwrap());
 
-    match probe_installed_status(&mut Cursor::new(sector0.to_vec())) {
+    assert_eq!(
+        probe_installed_status(&mut Cursor::new(disk.clone())),
+        RudyStatus::NotInstalled,
+        "cut off before the flash"
+    );
+
+    let part2 = geometry.part2_byte_offset() as usize;
+    let image = RudyEfiFatBuilder::build_fresh_image("1.0.99-test").unwrap();
+    disk[part2..part2 + image.len()].copy_from_slice(&image);
+    match probe_installed_status(&mut Cursor::new(disk)) {
         RudyStatus::Corrupt { reason } => assert!(reason.contains("never completed")),
         other => panic!("expected Corrupt for an unfinished MBR install, got {other:?}"),
     }
@@ -175,7 +190,7 @@ mod without_opening {
     const PART1_OFFSET: u64 = PART1_START_LBA * SECTOR_SIZE;
     const PART2_SIZE: u64 = PART2_SIZE_SECTORS * SECTOR_SIZE;
 
-    fn status(geometry: Result<Vec<(u64, u64)>, String>) -> RudyStatus {
+    fn status(geometry: Result<Vec<(u64, u64, String)>, String>) -> RudyStatus {
         status_without_opening(
             &Error::from(ErrorKind::NotFound),
             "Cannot open /dev/sdb to read it: No such file or directory (os error 2)",
@@ -183,10 +198,14 @@ mod without_opening {
         )
     }
 
-    fn rudys() -> Vec<(u64, u64)> {
+    fn rudys() -> Vec<(u64, u64, String)> {
         vec![
-            (PART1_OFFSET, 14_000_000_000),
-            (PART1_OFFSET + 14_000_000_000, PART2_SIZE),
+            (PART1_OFFSET, 14_000_000_000, "RUDY".to_string()),
+            (
+                PART1_OFFSET + 14_000_000_000,
+                PART2_SIZE,
+                "RUDYEFI".to_string(),
+            ),
         ]
     }
 
@@ -204,6 +223,15 @@ mod without_opening {
             !status.was_probed(),
             "the drive's bytes were not read; the GUI must not draw a finding from it"
         );
+    }
+
+    /// PRV-20. A Ventoy stick has Rudy's geometry; its partition 2 is labelled
+    /// `VTOYEFI`. Unopened, that label is the evidence that it is not Rudy's.
+    #[test]
+    fn rudys_geometry_with_a_foreign_label_is_not_rudys() {
+        let mut ventoy = rudys();
+        ventoy[1].2 = "VTOYEFI".to_string();
+        assert_eq!(status(Ok(ventoy)), RudyStatus::NotInstalled);
     }
 
     #[test]
@@ -225,9 +253,9 @@ mod without_opening {
 
     #[test]
     fn a_missing_or_extra_partition_or_no_table_is_not_rudys() {
-        let one = vec![rudys()[0]];
+        let one = vec![rudys()[0].clone()];
         let mut three = rudys();
-        three.push((40_000_000_000, PART2_SIZE));
+        three.push((40_000_000_000, PART2_SIZE, String::new()));
         for geometry in [one, three, Vec::new()] {
             assert_eq!(
                 status(Ok(geometry.clone())),
@@ -249,4 +277,49 @@ mod without_opening {
         assert!(detail.contains("No such file"), "{detail}");
         assert!(detail.contains("udisks2 has no block object"), "{detail}");
     }
+}
+
+/// A medium whose reads at one offset fail as a device would, not short.
+struct RefusesAt {
+    inner: Cursor<Vec<u8>>,
+    offset: u64,
+}
+
+impl std::io::Read for RefusesAt {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.inner.position() == self.offset {
+            return Err(std::io::Error::other("the device refused the read"));
+        }
+        self.inner.read(buf)
+    }
+}
+
+impl std::io::Seek for RefusesAt {
+    fn seek(&mut self, to: std::io::SeekFrom) -> std::io::Result<u64> {
+        self.inner.seek(to)
+    }
+}
+
+/// PRV-03: under MBR, partition 2's label is part of what makes a table Rudy's.
+/// When that sector will not read, nothing was learned about the label, so an
+/// unmarked MBR drive is `Unreadable`, never `NotInstalled`.
+#[test]
+fn an_mbr_partition_two_that_will_not_read_is_unreadable_not_foreign() {
+    let geometry = DiskGeometry::compute(MIN_DISK_SECTORS, PartitionScheme::Mbr, 0).unwrap();
+    let mut disk = vec![0u8; (MIN_DISK_SECTORS * SECTOR_SIZE) as usize];
+    disk[..512].copy_from_slice(&MbrBuilder::build(&geometry, FilesystemType::Ntfs).unwrap());
+    let part2 = geometry.part2_byte_offset() as usize;
+    let image = RudyEfiFatBuilder::build_fresh_image("1.0.99-test").unwrap();
+    disk[part2..part2 + image.len()].copy_from_slice(&image);
+
+    let mut medium = RefusesAt {
+        inner: Cursor::new(disk),
+        offset: geometry.part2_byte_offset(),
+    };
+    let status = probe_installed_status(&mut medium);
+
+    assert!(
+        matches!(status, RudyStatus::Unreadable { .. }),
+        "expected Unreadable, got {status:?}"
+    );
 }

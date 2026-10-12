@@ -285,10 +285,10 @@ impl LinuxPlatform {
         }
     }
 
-    /// `(byte offset, byte size)` per partition, as udisks2 reports them to an
+    /// `(byte offset, byte size, label)` per partition, as udisks2 reports them to an
     /// unprivileged caller. A drive udisks2 has no object for is an error, not
     /// an empty table.
-    fn udisks2_geometry(dev_node: &Path) -> Result<Vec<(u64, u64)>, String> {
+    fn udisks2_geometry(dev_node: &Path) -> Result<Vec<(u64, u64, String)>, String> {
         let device_number = Self::selector_device_number(dev_node).map_err(|e| e.to_string())?;
         let connection = crate::udisks2::connect().map_err(|e| e.to_string())?;
         let disk = crate::udisks2::block_object_for_device_number(&connection, device_number)
@@ -296,8 +296,8 @@ impl LinuxPlatform {
             .ok_or_else(|| "udisks2 does not know this drive".to_string())?;
         Ok(crate::udisks2::partitions_of(&connection, &disk)
             .map_err(|e| e.to_string())?
-            .iter()
-            .map(|partition| (partition.offset, partition.size))
+            .into_iter()
+            .map(|partition| (partition.offset, partition.size, partition.label))
             .collect())
     }
 

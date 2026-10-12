@@ -48,10 +48,14 @@ Under GPT, partition 2 is typed **Microsoft Basic Data** and carries attribute b
   which fails a GPT drive typed the old way and says to reinstall it. Update still touches
   only partition 2's contents: a table write in the update path would be a new way to lose
   a drive, taken on for drives that a reinstall already fixes.
-- **MBR keeps `0xEF`.** Whether Windows counts an MBR `0xEF` partition the same way is
-  unknown, and `0xEF` is also how Rudy recognises its own MBR table. It waits for an MBR
-  stick on the laptop (`.scratch/windows-boot/issues/06`). `layout.part2_type` skips it
-  under MBR.
+- **MBR keeps `0xEF`.** Windows does not count an MBR `0xEF` partition as a second ESP
+  (WB-06, 2026-10-01, OVMF). An MBR stick with the unpacked Server 2022 installer, booted
+  through `winfs` beside a blank SATA target, took Setup through *Copying files* and
+  *Getting files ready* to its first reboot. Setup listed partition 2 as *Primary*, not
+  *System*, and wrote `BCD` and `bootmgfw.efi` to the ESP it created on the target. A
+  control with partition 2 retyped `0x0E` behaved identically. `0xEF` is also how Rudy
+  recognises its own MBR table, and `layout.part2_type` checks it under MBR. A laptop
+  run with an MBR stick would confirm this on real firmware; it is not a gate.
 
 ## Consequences
 

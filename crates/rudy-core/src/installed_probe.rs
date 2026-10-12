@@ -74,6 +74,14 @@ pub fn probe(reader: &mut impl ReadAt) -> RudyStatus {
     }
 
     if !completed {
+        // Under MBR the label on partition 2 is part of the table's provenance
+        // (PRV-03). A sector that would not come off taught nothing about it;
+        // one past the end of the medium did: the table is not Rudy's.
+        if let Some(error) = evidence.part2_boot_error() {
+            if !error.is_short() {
+                return RudyStatus::unreadable(&error.to_io(), error.to_string());
+            }
+        }
         // No mark. Either Rudy never touched this drive, or it was interrupted
         // between writing the table and stamping the mark.
         let rudys_table = evidence.layout().is_ok() && evidence.table_is_rudys();
@@ -99,8 +107,8 @@ pub fn probe(reader: &mut impl ReadAt) -> RudyStatus {
 /// The status of a drive that could not be opened, from the partition geometry
 /// udisks2 reports without a prompt (AR-28).
 ///
-/// `geometry` is `(byte offset, byte size)` per partition, or why it could not
-/// be had. The rule is [`geometry_matches_rudy`], the one the ISO manager
+/// `geometry` is `(byte offset, byte size, filesystem label)` per partition,
+/// or why it could not be had. The rule is [`geometry_matches_rudy`], the one the ISO manager
 /// already offers on. A match is [`RudyStatus::LayoutOnly`] and never
 /// `Installed`, because the completion mark is not visible from here. A
 /// mismatch is `NotInstalled`, since an install writes the table first. No
@@ -108,7 +116,7 @@ pub fn probe(reader: &mut impl ReadAt) -> RudyStatus {
 pub fn status_without_opening(
     open_error: &std::io::Error,
     open_detail: &str,
-    geometry: Result<Vec<(u64, u64)>, String>,
+    geometry: Result<Vec<(u64, u64, String)>, String>,
 ) -> RudyStatus {
     match geometry {
         Ok(partitions) if geometry_matches_rudy(&partitions) => RudyStatus::LayoutOnly,

@@ -60,8 +60,8 @@ use uuid::Uuid;
 /// 0.5.8, **2.4.4** at 0.5.9, **2.4.5** at 0.5.10
 /// **2.4.6** at 0.5.11, **2.4.7** at 0.5.12, **2.4.8** at 0.5.13,
 /// **2.4.9** at 0.5.14, **2.4.10** at 0.5.15, **2.4.11** at 0.5.16 and
-/// **2.4.12** at 0.5.17.
-pub const ASSET_VERSION: &str = "2.4.12";
+/// **2.4.17** at 0.5.17.
+pub const ASSET_VERSION: &str = "2.4.17";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InstallOperation {

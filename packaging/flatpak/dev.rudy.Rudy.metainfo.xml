@@ -58,6 +58,31 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.5.22" date="2026-10-01">
+      <description>
+        <p>A Ventoy stick is no longer listed as a possible Rudy drive before it is opened.</p>
+      </description>
+    </release>
+    <release version="0.5.21" date="2026-10-01">
+      <description>
+        <p>Rudy no longer mistakes another tool's MBR drive, such as a Ventoy stick, for its own, and will not update it.</p>
+      </description>
+    </release>
+    <release version="0.5.20" date="2026-10-01">
+      <description>
+        <p>An MBR drive that Windows has seen no longer fails Rudy's check: the disk signature Windows writes is accepted.</p>
+      </description>
+    </release>
+    <release version="0.5.19" date="2026-10-01">
+      <description>
+        <p>Checking an MBR drive now confirms its boot partition's type, which Windows Setup was shown to accept.</p>
+      </description>
+    </release>
+    <release version="0.5.18" date="2026-10-01">
+      <description>
+        <p>The boot program builds with current Rust compilers again. Nothing changes on the drive.</p>
+      </description>
+    </release>
     <release version="0.5.17" date="2026-10-01">
       <description>
         <p>A Linux image whose name has spaces, such as a browser's "ubuntu (1).iso", is copied under a name the boot menu can start, and Rudy tells you the name it used.</p>

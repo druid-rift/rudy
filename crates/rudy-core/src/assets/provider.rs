@@ -28,7 +28,7 @@ impl Default for MockAssetProvider {
             // `scripts/tests/test_bundle_version_agreement.py` is what holds it
             // to the other three. Without that, a bump left every test that
             // uses this provider asking for a bundle the app no longer builds.
-            version: "2.4.12".into(),
+            version: "2.4.17".into(),
         }
     }
 }
