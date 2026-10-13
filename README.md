@@ -82,6 +82,24 @@ independently derived.
 
 ## Getting Started
 
+### Install
+
+Nothing to compile. Download [`Rudy.flatpak`](../../releases/latest/download/Rudy.flatpak)
+from the [latest release](../../releases/latest) and install it:
+
+```bash
+flatpak install --user Rudy.flatpak
+flatpak run dev.rudy.Rudy
+```
+
+That one file is the whole of Rudy for x86_64: the desktop app, the `rudy` CLI and the boot
+payload it writes to a drive. Flatpak fetches the freedesktop runtime it runs on from
+Flathub the first time. The host needs `flatpak`, `udisks2` and the formatting tools
+listed under [Prerequisites](#prerequisites), because udisks2 runs those outside the
+sandbox. The CLI is `flatpak run --command=rudy dev.rudy.Rudy list --all`.
+
+The rest of this section is for building Rudy from source.
+
 ### Prerequisites
 
 - **Rust 1.92 or newer** (stable, with Cargo). The floor is measured, not assumed: the
@@ -124,6 +142,10 @@ before writing a drive — Rudy refuses to write one without it (about four seco
 
 It needs the Rust toolchain with the `x86_64-unknown-uefi` target, `mtools`, `dosfstools`
 and `zstd`. See [boot/README.md](boot/README.md).
+
+`make flatpak` builds the release file itself, `target/flatpak/Rudy.flatpak`. It needs
+`flatpak-builder` and, from Flathub, `org.freedesktop.Sdk//25.08` with its
+`org.freedesktop.Sdk.Extension.rust-stable` extension.
 
 ---
 

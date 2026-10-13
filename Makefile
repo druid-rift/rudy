@@ -44,6 +44,7 @@ help:
 	@echo
 	@echo "  Needs QEMU and a built payload"
 	@echo "    make payload          build the boot payload from crates/rudy-boot"
+	@echo "    make flatpak          build target/flatpak/Rudy.flatpak, the file users install"
 	@echo "    make vm-smoke         one boot case end to end ($(SMOKE_CASE))"
 	@echo "    make vm-matrix        the full image + boot matrix"
 	@echo "    make release-check    everything non-destructive"
@@ -146,6 +147,10 @@ test: lint test-fast negative
 .PHONY: payload
 payload:
 	./scripts/build-boot-payload.sh
+
+.PHONY: flatpak
+flatpak:
+	./scripts/build-flatpak.sh
 
 .PHONY: release-binaries
 release-binaries:
