@@ -1,0 +1,71 @@
+name: Bug or test report
+description: Something Rudy did wrong, or an image that did not boot
+labels: [needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for testing. Leave out anything that identifies you: usernames, home
+        paths and drive serial numbers are not needed.
+  - type: input
+    id: version
+    attributes:
+      label: Rudy version
+      description: "`flatpak run --command=rudy dev.rudy.Rudy --version`"
+      placeholder: rudy 0.5.22
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where it went wrong
+      options:
+        - Installing the Flatpak
+        - Writing Rudy to a drive
+        - Adding or copying images
+        - Rudy's boot menu
+        - After choosing an image in the menu
+        - Something else
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: Linux distribution and desktop
+      placeholder: Fedora 44, GNOME
+    validations:
+      required: true
+  - type: input
+    id: machine
+    attributes:
+      label: Machine booted from the drive
+      description: Make and model, and whether Secure Boot is off. Leave empty if the problem is not at boot.
+  - type: input
+    id: image
+    attributes:
+      label: Image file
+      description: The exact file name, as downloaded.
+      placeholder: ubuntu-26.04-live-server-amd64.iso
+  - type: dropdown
+    id: filesystem
+    attributes:
+      label: Drive filesystem
+      options:
+        - NTFS (default)
+        - exFAT
+        - Not sure
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened, and what you expected
+      description: The steps, then the last thing on screen. A photo of the screen is welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: bootlog
+    attributes:
+      label: Boot log
+      description: >
+        For a boot problem: plug the drive back in and paste `/rudy/bootlog.env` from its
+        small `RUDYEFI` partition. The drive writes it as the menu runs.
+      render: text

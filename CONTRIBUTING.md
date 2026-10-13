@@ -33,4 +33,6 @@ request waits for the maintainer to start it.
 - New dependencies without a stated reason, or changes to CI permissions.
 
 Security problems go to the maintainer privately through GitHub's
-"Report a vulnerability" on the Security tab, never in a public issue.
+"Report a vulnerability" on the Security tab, never in a public issue. See `SECURITY.md`.
+
+Everyone taking part is held to `CODE_OF_CONDUCT.md`.

@@ -84,8 +84,8 @@ independently derived.
 
 ### Install
 
-Nothing to compile. Download [`Rudy.flatpak`](../../releases/latest/download/Rudy.flatpak)
-from the [latest release](../../releases/latest) and install it:
+Nothing to compile. **[Download Rudy](../../releases/latest/download/Rudy.flatpak)**, a
+single `Rudy.flatpak` file, and install it:
 
 ```bash
 flatpak install --user Rudy.flatpak
@@ -97,6 +97,21 @@ payload it writes to a drive. Flatpak fetches the freedesktop runtime it runs on
 Flathub the first time. The host needs `flatpak`, `udisks2` and the formatting tools
 listed under [Prerequisites](#prerequisites), because udisks2 runs those outside the
 sandbox. The CLI is `flatpak run --command=rudy dev.rudy.Rudy list --all`.
+
+Older builds and checksums are on the [releases page](../../releases).
+
+### Help test it
+
+Rudy is pre-release and needs testing on machines its author does not own.
+
+- **Use a spare USB drive. Installing Rudy erases it.** Rudy refuses system disks, but
+  check the drive you pick.
+- Install Rudy on the drive, add one or two images from [Scope](#scope-v1), and boot a
+  UEFI machine from it with Secure Boot turned off.
+- Whether it worked or not, [open a report](../../issues/new/choose). A boot that worked
+  on hardware nobody has tried is as useful as one that failed.
+
+Security problems go through [SECURITY.md](SECURITY.md), never a public issue.
 
 The rest of this section is for building Rudy from source.
 
@@ -229,6 +244,13 @@ Current scope decisions and the reasoning behind them are recorded as ADRs under
 
 ---
 
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request, and the
+[code of conduct](CODE_OF_CONDUCT.md).
+
+---
+
 ## License
 
-GPL-3.0-or-later
+GPL-3.0-or-later. See [LICENSE](LICENSE).
