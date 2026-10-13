@@ -5,8 +5,8 @@
   Written to Flathub's schema even though flatpak 03 chose a locally-built
   bundle, so that publishing later is a submission rather than a rewrite. Three
   things a Flathub submission would still need and this does not have:
-  screenshots (none exist that are not test evidence), a homepage, and an app id
-  on a domain the project controls.
+  screenshots (none exist that are not test evidence) and an app id on a domain
+  the project controls.
 -->
 <component type="desktop-application">
   <id>dev.rudy.Rudy</id>
@@ -34,12 +34,15 @@
 
   <launchable type="desktop-id">dev.rudy.Rudy.desktop</launchable>
 
-  <!-- No homepage, deliberately. Until 0.5.23 this named the domain the app
-       id is spelled after, which was measured 2026-10-13 to be an unrelated
-       person's website: the project does not control it. No link is better
-       than a link to a stranger. Flathub verifies control of the id's domain
-       with a token served from /.well-known/org.flathub.VerifiedApps.txt, so a
+  <!-- The public repository, which is the only site the project has. Until
+       0.5.23 this named the domain the app id is spelled after, which was
+       measured 2026-10-13 to be an unrelated person's website: the project
+       does not control it. Flathub verifies control of the id's domain with a
+       token served from /.well-known/org.flathub.VerifiedApps.txt, so a
        submission needs a new id first. -->
+  <url type="homepage">https://github.com/druid-rift/rudy</url>
+  <url type="bugtracker">https://github.com/druid-rift/rudy/issues</url>
+  <url type="vcs-browser">https://github.com/druid-rift/rudy</url>
 
   <developer id="dev.rudy">
     <name>The Rudy project</name>
@@ -59,6 +62,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.5.24" date="2026-10-13">
+      <description>
+        <p>The app names its public repository as its homepage and where to report a problem.</p>
+      </description>
+    </release>
     <release version="0.5.23" date="2026-10-13">
       <description>
         <p>The app no longer names a homepage that was never the project's.</p>

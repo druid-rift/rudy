@@ -41,6 +41,11 @@ class IdentifyingDataCheckTest(unittest.TestCase):
     def test_an_allowed_token_cannot_hide_a_forbidden_one_on_its_line(self):
         self.assertEqual(check(f'"cachyos-desktop-linux-*.iso", "{HOME_PATH}"\n'), 1)
 
+    def test_the_public_repository_address_is_the_only_place_the_account_may_appear(self):
+        account = "-".join(["dr" + "uid", "rift"])
+        self.assertEqual(check(f"https://github.com/{account}/rudy/issues\n", RUDY_IDENTIFYING_TOKENS=account), 0)
+        self.assertEqual(check(f"pushed by {account}\n", RUDY_IDENTIFYING_TOKENS=account), 1)
+
     def test_a_token_supplied_outside_the_tree_is_enforced(self):
         self.assertEqual(check("booted on the benchmodel\n"), 0)
         self.assertEqual(check("booted on the benchmodel\n", RUDY_IDENTIFYING_TOKENS="benchmodel"), 1)

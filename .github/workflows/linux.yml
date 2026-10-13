@@ -99,7 +99,7 @@ jobs:
         run: |
           if [ "${{ steps.boot-payload.outputs.cache-hit }}" = "true" ]; then
             echo "[*] Verifying cached boot payload..."
-            if python3 -m scripts.verify_boot_payload --bundle assets/boot-assets/2.4.18 --require-manifest; then
+            if python3 -m scripts.verify_boot_payload --bundle assets/boot-assets/2.4.19 --require-manifest; then
               echo "[*] Cached boot payload verified successfully."
               exit 0
             else
@@ -107,7 +107,7 @@ jobs:
             fi
           fi
           ./scripts/build-boot-payload.sh
-          python3 -m scripts.verify_boot_payload --bundle assets/boot-assets/2.4.18 --require-manifest
+          python3 -m scripts.verify_boot_payload --bundle assets/boot-assets/2.4.19 --require-manifest
 
       - name: Format (files this change touched)
         # Not `cargo fmt --all`: ~71 pre-existing hunks across the tree would

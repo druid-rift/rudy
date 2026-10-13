@@ -56,7 +56,11 @@ fi
 # test image keeps the name its publisher gave it. An allowed match is removed
 # from the line *before* the line is judged, so it cannot hide a forbidden token
 # that shares the line with it — which is how one did, until 2026-09-24.
-ALLOWED='(/media/user/|/run/media/user/|cachyos-desktop-linux|@users\.noreply\.github\.com|noreply@anthropic\.com|check-no-identifying-data|VENDOR_MODEL_SERIAL|"serial"[[:space:]]*:[[:space:]]*"0+")'
+#
+# The public repository's own address is allowed too, by the maintainer's
+# decision of 2026-10-13: the app's metadata needs a homepage and the project has
+# no other. It names the account, and nothing else may.
+ALLOWED='(https://github\.com/druid-rift/rudy|/media/user/|/run/media/user/|cachyos-desktop-linux|@users\.noreply\.github\.com|noreply@anthropic\.com|check-no-identifying-data|VENDOR_MODEL_SERIAL|"serial"[[:space:]]*:[[:space:]]*"0+")'
 
 # `--message FILE` judges a commit message (the `commit-msg` hook), which git
 # grep cannot reach because it is not a tracked file.

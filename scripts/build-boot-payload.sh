@@ -37,8 +37,8 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # program rebuilt at app 0.5.6, 2.4.2 at 0.5.7, 2.4.3 at 0.5.8 and
 # 2.4.4 at 0.5.9, 2.4.5 at 0.5.10, 2.4.6 at 0.5.11, 2.4.7 at 0.5.12 and
 # 2.4.8 at 0.5.13, 2.4.9 at 0.5.14, 2.4.10 at 0.5.15 and
-# 2.4.11 at 0.5.16, 2.4.17 at 0.5.17 and 2.4.18 at 0.5.23.
-BUNDLE_VERSION="${RUDY_BOOT_ASSET_VERSION:-2.4.18}"
+# 2.4.11 at 0.5.16, 2.4.17 at 0.5.17 2.4.18 at 0.5.23 and 2.4.19 at 0.5.24.
+BUNDLE_VERSION="${RUDY_BOOT_ASSET_VERSION:-2.4.19}"
 
 # The target the payload is built for. UEFI x86-64 only — ADR 0004 §3 stands.
 PAYLOAD_TARGET="x86_64-unknown-uefi"
