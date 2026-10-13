@@ -3,8 +3,7 @@
 //! Four consumers read the same bytes off a drive: the installed probe, the
 //! contract verifier, the boot-log reader and the in-place update gate. They
 //! reach different verdicts *on purpose* — AR-08's characterization records the
-//! shape of that disagreement, and [the evidence
-//! spec](../../../.scratch/architecture-remediation/readback-evidence-spec.md)
+//! shape of that disagreement, and the readback evidence spec written with it
 //! lists the six things a consolidation may not do. This module shares the
 //! **reads**; the verdicts stay where they are.
 //!

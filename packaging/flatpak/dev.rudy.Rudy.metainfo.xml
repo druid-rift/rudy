@@ -3,10 +3,10 @@
   AppStream metadata for the Flatpak bundle (flatpak 04).
 
   Written to Flathub's schema even though flatpak 03 chose a locally-built
-  bundle, so that publishing later is a submission rather than a rewrite. Two
+  bundle, so that publishing later is a submission rather than a rewrite. Three
   things a Flathub submission would still need and this does not have:
-  screenshots (none exist that are not test evidence) and a reachable homepage
-  at https://rudy.dev.
+  screenshots (none exist that are not test evidence), a homepage, and an app id
+  on a domain the project controls.
 -->
 <component type="desktop-application">
   <id>dev.rudy.Rudy</id>
@@ -34,11 +34,12 @@
 
   <launchable type="desktop-id">dev.rudy.Rudy.desktop</launchable>
 
-  <!-- The domain the app id is derived from. Confirmed as the project's
-       2026-09-02; Flathub verifies control of it with a token served from
-       /.well-known/org.flathub.VerifiedApps.txt, which a submission would
-       need and a local bundle does not. -->
-  <url type="homepage">https://rudy.dev</url>
+  <!-- No homepage, deliberately. Until 0.5.23 this named the domain the app
+       id is spelled after, which was measured 2026-10-13 to be an unrelated
+       person's website: the project does not control it. No link is better
+       than a link to a stranger. Flathub verifies control of the id's domain
+       with a token served from /.well-known/org.flathub.VerifiedApps.txt, so a
+       submission needs a new id first. -->
 
   <developer id="dev.rudy">
     <name>The Rudy project</name>
@@ -58,6 +59,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.5.23" date="2026-10-13">
+      <description>
+        <p>The app no longer names a homepage that was never the project's.</p>
+      </description>
+    </release>
     <release version="0.5.22" date="2026-10-01">
       <description>
         <p>A Ventoy stick is no longer listed as a possible Rudy drive before it is opened.</p>

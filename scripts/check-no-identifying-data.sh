@@ -37,7 +37,7 @@ FORBIDDEN='(/home/[a-z]|/mnt/data|/run/media/|/media/[a-z]|[A-Za-z0-9._%+-]+@[A-
 # them is itself the disclosure. They live one per line (regex allowed, `#`
 # comments) in `.git/info/identifying-tokens`, which git never tracks, and CI
 # may add more through the `RUDY_IDENTIFYING_TOKENS` secret, `|`-separated.
-# `docs/agents/bench-setup.md` says what belongs in the file.
+# A fresh clone has no such file; write one before the first commit.
 tokens_file="$(git rev-parse --git-path info/identifying-tokens 2>/dev/null)"
 if [[ -n "${tokens_file}" && -r "${tokens_file}" ]]; then
     while IFS= read -r token; do

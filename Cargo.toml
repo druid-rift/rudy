@@ -9,14 +9,13 @@ members = [
 ]
 
 [workspace.package]
-version = "0.5.22"
+version = "0.5.23"
 edition = "2021"
 # Measured, not assumed: Slint 1.17.1 declares 1.92, rustc 1.91.0 refuses the
 # locked dependency set, and 1.92.0 builds and passes the tests (AR-19).
 rust-version = "1.92"
 authors = ["Rudy Contributors"]
 license = "GPL-3.0-or-later"
-repository = "https://rudy.dev"
 
 [workspace.dependencies]
 rudy-core = { path = "crates/rudy-core" }

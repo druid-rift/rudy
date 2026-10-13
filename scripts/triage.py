@@ -8,9 +8,9 @@ is reported only to a terminal is lost the moment the scrollback goes.
 So every failure lands as a file under `target/findings/`, labelled with the
 Rudy Tickets properties — `Status: needs-triage`, `Type`, `Priority`, `Effort`,
 `Source` — and the session that ran the suite files it into that Notion
-database as it stands (`docs/agents/issue-tracker.md`). The suite holds no
+database as it stands. The suite holds no
 Notion credential, so it cannot file there itself.
-Not `.scratch/`, which is now a read-only archive; and the ticket names paths
+Not the old in-tree ticket archive, which is read-only; and the ticket names paths
 relative to the repository, because it is written to be pasted somewhere else
 and an absolute path names the bench.
 

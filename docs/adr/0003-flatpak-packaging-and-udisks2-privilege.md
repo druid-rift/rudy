@@ -449,18 +449,16 @@ sandbox: see AR-28.
 
 ## Where these tickets are
 
-*Added 2026-09-07 (AR-01).* The flatpak, testing and respec tickets cited above lived in an
-untracked `.scratch/` and **are not in this repository**. Four of them were written here as
-Markdown links to `.scratch/rudy-flatpak/` and `.scratch/rudy-testing/` paths that no
-checkout contains; a reader following one gets a missing file, not a decision. They are now
+*Added 2026-09-07 (AR-01).* The flatpak, testing and respec tickets cited above
+**are not in this repository**. Four of them were written here as Markdown links to paths
+that no checkout contains; a reader following one gets a missing file, not a decision. They are now
 cited by name only, which is the honest form: each says *that* a decision was recorded and
 never *what* it said.
 
-Do not guess at their contents and do not renumber new tickets into the gaps
-(`docs/agents/issue-tracker.md`). What survives of those decisions is what was written into
-this ADR, `CONTEXT.md` and `docs/testing-*.md` at the time. Tickets written since the
-tracker convention landed are tracked Markdown under `.scratch/<feature>/` and are linked by
-path — those links resolve.
+Do not guess at their contents and do not renumber new tickets into the gaps. What
+survives of those decisions is what was written into this ADR, `CONTEXT.md` and
+`docs/testing-*.md` at the time. Tickets written since are cited by identifier (AR-20,
+WB-03) and live in the maintainers' tracker, which is not published with the source.
 
 ---
 

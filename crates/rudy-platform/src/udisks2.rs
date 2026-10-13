@@ -653,7 +653,7 @@ fn open_device_asking(
 /// manifest lets the sandbox read, and `file` must be the real file, never the
 /// document portal's (see `windows_installer::portal_host_path`). The unpack ran
 /// from inside the installed Flatpak on 2026-09-29
-/// (`.scratch/windows-boot/issues/05`).
+/// (WB-05).
 ///
 /// **Torn down on drop**, unmounted and then detached, whichever way the work
 /// that needed it ended. A failure to tear down is logged rather than returned:

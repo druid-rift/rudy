@@ -4,7 +4,7 @@
 - **Date:** 2026-09-30
 - **Amends:** `CONTEXT.md` §1, *Partition 2*; every drive written before this typed
   partition 2 EFI System under GPT
-- **Context:** the laptop runs of 2026-09-29 (`.scratch/windows-boot/issues/03`); the
+- **Context:** the laptop runs of 2026-09-29 (WB-03); the
   maintainer chose the type, the attribute bits, the remedy for old drives and the MBR
   deferral the same day.
 

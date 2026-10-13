@@ -7,12 +7,13 @@ functionality only — no Ventoy code is used, and its mechanisms are independen
 derived. Scope decisions are recorded as ADRs under `docs/adr/`.
 
 **On the bare ticket citations below.** References of the form "ticket 11", "flatpak 13",
-"respec 17" and "testing 30" point into an untracked `.scratch/` that is **not in this
-repository**; `docs/agents/issue-tracker.md` is the rule and this is the notice. Each says
-that a decision was recorded and never what it said. Treat one as a dead link: do not guess
-at its contents, and do not treat a citation as evidence for the claim beside it. Live
-tickets are tracked Markdown under `.scratch/<feature>/` and are linked by path.
-*Recorded 2026-09-07 (AR-01).*
+"respec 17" and "testing 30" name tickets from an older numbering whose bodies **are not in
+this repository**. Each says that a decision was recorded and never what it said. Treat one
+as a dead link: do not guess at its contents, and do not treat a citation as evidence for
+the claim beside it. Identifiers of the form AR-20, RB-08, WB-03 or PRV-10 name tickets in
+the maintainers' tracker, which is their working record and is not published with the
+source; what a reader needs from one is written beside the citation.
+*Recorded 2026-09-07 (AR-01), revised 2026-10-13.*
 
 ---
 
@@ -78,7 +79,7 @@ tickets are tracked Markdown under `.scratch/<feature>/` and are linked by path.
   run: a stick freshly installed by the 0.5.0 Flatpak, the ISO added in the app (a
   cancelled copy first, then a complete one), and the laptop booted `Windows installer`,
   installed Windows and reached its first-run settings page, with no errors
-  (`.scratch/windows-boot/issues/03`).
+  (WB-03).
 
   **Under the suite's own QEMU the unpacked route reaches Setup most of the time** (7 of 10
   boots, WB-04). When it stalls, it stalls at the firmware logo after Windows' own loader

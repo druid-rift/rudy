@@ -12,7 +12,7 @@ body:
     attributes:
       label: Rudy version
       description: "`flatpak run --command=rudy dev.rudy.Rudy --version`"
-      placeholder: rudy 0.5.22
+      placeholder: rudy 0.5.23
     validations:
       required: true
   - type: dropdown

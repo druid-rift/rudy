@@ -365,8 +365,8 @@ cannot honestly check (ticket 07), on the tier that can least afford a false pas
 
 ### Candidate `3237dff` — 2026-09-19
 
-Collected for AR-20; the release verdict is still **not given**. Detail in
-`.scratch/architecture-remediation/issues/20-integrated-acceptance.md`.
+Collected for AR-20; the release verdict is still **not given**. The detail is in that
+ticket.
 
 - **The payload changed after the runs below, so they were re-run.** AR-29 edited
   `boot/grub/theme/theme.txt` on 2026-09-17, which makes every 2026-09-14 boot result
@@ -393,8 +393,8 @@ Collected for AR-20; the release verdict is still **not given**. Detail in
 
 ### Release candidate `ecca971` — 2026-09-14
 
-Collected for AR-20; the release verdict is **not given**, and the detail is in
-`.scratch/architecture-remediation/issues/20-integrated-acceptance.md`.
+Collected for AR-20; the release verdict is **not given**, and the detail is in that
+ticket.
 
 - **Full `make vm-matrix`, twice, 21 passed, 0 failed, 3 skipped each.** Once on the host
   payload at `d074d56`, and once at `ecca971` on the **Flatpak-built** payload

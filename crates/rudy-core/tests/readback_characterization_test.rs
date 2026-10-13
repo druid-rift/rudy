@@ -131,7 +131,7 @@ const EXPECTED: &[Row] = &[
     //
     // Corrected by ADR 0007, 2026-09-30. `layout.part2_type` joined the
     // verifier: one more pass on every GPT row (17 to 18), one more skip on MBR,
-    // whose partition 2 keeps `0xEF` until `.scratch/windows-boot/issues/06`
+    // whose partition 2 keeps `0xEF` until WB-06
     // tries it with Windows Setup.
     //
     // Corrected by PRV-11, 2026-10-01. `esp.label` and `esp.exactly_three_files`

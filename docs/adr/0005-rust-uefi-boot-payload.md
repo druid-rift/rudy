@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-09-19
 - **Supersedes:** ADR 0004 §2 in part — see "What survives from 0004"
-- **Context:** `.scratch/rust-boot-payload/` (RB-01 … RB-12)
+- **Context:** the rust-boot-payload effort (RB-01 … RB-12)
 
 ## Context and Problem Statement
 

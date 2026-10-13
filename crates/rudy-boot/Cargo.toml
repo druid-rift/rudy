@@ -5,7 +5,6 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-repository.workspace = true
 description = "Rudy's UEFI boot payload: the menu a Rudy drive shows when it starts."
 
 # The payload's portable half — everything that is not a firmware call. It is

@@ -129,7 +129,7 @@ rig copies Windows and finishes Setup's WinPE phase; retyped back, it crashes as
 stick was prepared as the app now prepares one. The drive's own boot log recorded the
 laptop's device path, the graphical menu, `entry=windows` and `layout=windows-extracted`. The
 install was not run, because the laptop's disk was not to be wiped. The maintainer will run it
-(`.scratch/windows-boot/issues/03`), and until then Rudy is built as if it installs, at their
+(WB-03), and until then Rudy is built as if it installs, at their
 direction.
 
 **So the app unpacks a Windows installer itself** (`rudy_platform::windows_installer`), since

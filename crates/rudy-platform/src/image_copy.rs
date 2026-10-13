@@ -16,9 +16,8 @@
 //! The staging file is flushed before the rename, and the filesystem is synced
 //! after it, so a copy that returned `Ok` has its final name on the drive. A
 //! power loss *during* a copy still leaves a staging file behind; recovering
-//! from that is separate work — see the [feature spec].
-//!
-//! [feature spec]: ../../../.scratch/background-copy-streamer/spec.md
+//! from that is separate work, recorded in the background-copy-streamer spec
+//! (BCS-01).
 
 use crate::error::PlatformError;
 use rudy_core::format_bytes_as;

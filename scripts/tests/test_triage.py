@@ -144,7 +144,7 @@ class RenderTests(unittest.TestCase):
 
     def test_its_labels_are_the_rudy_tickets_options(self):
         # The finding is filed into Notion as it stands, so each label must be
-        # one the database's select offers (docs/agents/issue-tracker.md).
+        # one the database's select offers.
         self.assertIn("Type: bug", self.text)
         self.assertIn("Priority: P1", self.text)
         self.assertIn("Source: suite run `20260826T120000Z`", self.text)

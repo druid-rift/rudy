@@ -250,7 +250,7 @@ pub fn unpack_windows_installer(
 /// serves. The file picker hands a sandboxed app such a path even for a file
 /// the sandbox can read, and the portal's FUSE mount admits no other user, so
 /// udisks2, as root, cannot read back a loop device made from it: `LoopSetup`
-/// times out and leaves the device attached (`.scratch/windows-boot/issues/05`).
+/// times out and leaves the device attached (WB-05).
 /// The sandbox sees the portal at `/run/flatpak/doc`, the host at
 /// `/run/user/<uid>/doc`.
 fn document_id(path: &Path) -> Option<&str> {

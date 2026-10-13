@@ -4555,7 +4555,7 @@ dependencies = [
 
 [[package]]
 name = "rudy-boot"
-version = "0.5.22"
+version = "0.5.23"
 dependencies = [
  "binrw",
  "noto-sans-mono-bitmap",
@@ -4568,7 +4568,7 @@ dependencies = [
 
 [[package]]
 name = "rudy-cli"
-version = "0.5.22"
+version = "0.5.23"
 dependencies = [
  "clap",
  "fatfs",
@@ -4583,7 +4583,7 @@ dependencies = [
 
 [[package]]
 name = "rudy-core"
-version = "0.5.22"
+version = "0.5.23"
 dependencies = [
  "fatfs",
  "gpt",
@@ -4601,7 +4601,7 @@ dependencies = [
 
 [[package]]
 name = "rudy-gui"
-version = "0.5.22"
+version = "0.5.23"
 dependencies = [
  "i-slint-backend-testing",
  "rfd",
@@ -4615,7 +4615,7 @@ dependencies = [
 
 [[package]]
 name = "rudy-platform"
-version = "0.5.22"
+version = "0.5.23"
 dependencies = [
  "nix 0.29.0",
  "rudy-boot",
