@@ -1,0 +1,11 @@
+# cargo-audit policy; the same acceptances as deny.toml's [advisories], which
+# holds the reasoning. cargo-audit reads Cargo.lock, so it also sees bincode
+# (an optional dependency of the Slint compiler's typed-index-collections that
+# is not in the resolved graph, hence absent from deny.toml).
+[advisories]
+ignore = [
+    "RUSTSEC-2026-0206", # rustybuzz: Slint's text shaping
+    "RUSTSEC-2026-0192", # ttf-parser: Slint's font parsing
+    "RUSTSEC-2024-0436", # paste: build-time proc-macro inside the Slint compiler
+    "RUSTSEC-2025-0141", # bincode: optional dep of the Slint compiler, unresolved
+]

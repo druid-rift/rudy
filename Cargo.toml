@@ -33,7 +33,7 @@ fatfs = "0.3"
 gpt = "3.1"
 mbr-nostd = "0.1"
 clap = { version = "4.5", features = ["derive"] }
-indicatif = "0.17"
+indicatif = "0.18"
 slint = "1.7"
 uuid = { version = "1.10", features = ["v4", "serde"] }
 toml = "0.8"

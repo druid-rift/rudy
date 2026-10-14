@@ -4,9 +4,11 @@
 
 [advisories]
 # Accepted, not missed — measured 2026-09-14. Every one is `unmaintained`, not a
-# vulnerability, and none is a dependency this project chose: three are Slint's
-# font and macro stack and one is indicatif's. Each is ignored by ID, never by
-# kind, so a new advisory against any crate still fails the check.
+# vulnerability, and none is a dependency this project chose: all are Slint's
+# font and macro stack. Each is ignored by ID, never by kind, so a new advisory
+# against any crate still fails the check. `.cargo/audit.toml` carries the same
+# list for cargo-audit, which has its own config; keep the two together.
+# (number_prefix, once indicatif's, went with the 0.18 bump.)
 #
 # Not listed: RUSTSEC-2025-0141 (bincode, unmaintained). `cargo audit` reports
 # it from Cargo.lock, where it is an optional dependency of the Slint compiler's
@@ -16,7 +18,6 @@ ignore = [
     { id = "RUSTSEC-2026-0206", reason = "rustybuzz: Slint's text shaping; only Slint can replace it" },
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser: Slint's font parsing; only Slint can replace it" },
     { id = "RUSTSEC-2024-0436", reason = "paste: build-time proc-macro inside the Slint compiler" },
-    { id = "RUSTSEC-2025-0119", reason = "number_prefix: via indicatif 0.17 in the CLI's progress bar" },
 ]
 
 [licenses]
